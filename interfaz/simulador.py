@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import font as tkfont, ttk
 
 from interfaz.parametrizacion_colores import (
-    ACENTO, BORDE, CAMPO, ESTADO_ATENCION, ESTADO_ERROR, ESTADO_OK,
+    ACENTO, BORDE, CAMPO, COLOR_POR_NIVEL, ESTADO_ATENCION, ESTADO_ERROR, ESTADO_OK,
     FONDO_APP, GRILLA, PANEL, PANEL_ELEVADO, SELECCION, SELECCION_ACTIVA,
     TEXTO, TEXTO_SUAVE,
 )
@@ -28,10 +28,12 @@ CONFIG = {
 
 
 class Simulador(ttk.Frame):
-    def __init__(self, master, nivel, volver):
-        super().__init__(master, padding=(24, 18), style="TFrame")
+    def __init__(self, master, nivel, volver, abrir_nivel=None):
+        # Los módulos con navegación lateral ocupan todo el alto de la ventana.
+        super().__init__(master, padding=0, style="TFrame")
         self.nivel = nivel
         self.volver = volver
+        self.abrir_nivel = abrir_nivel
         self.pasos = []
         self.indice = 0
         self.after_id = None
@@ -51,13 +53,16 @@ class Simulador(ttk.Frame):
         self.bloque_c_var = tk.StringVar(value="c")
         self.modo_var = tk.StringVar(value="Palíndromo")
         self.simbolos_tm_var = tk.StringVar(value="0,1")
+        self.n_suma_var = tk.StringVar(value="3")
+        self.m_suma_var = tk.StringVar(value="2")
         self.n_var = tk.StringVar(value="2")
         self.patron_n1_var = tk.StringVar(value="aⁿ bⁿ cⁿ")
         self.patron_n2_var = tk.StringVar(value="xⁿ yⁿ (guiado)")
         self.plantilla_var = tk.StringVar(value="Termina en símbolo")
         self.custom_config = {
-            "estados": "q0,q1", "alfabeto": "0,1", "inicial": "q0", "finales": "q1",
-            "reglas": "q0,0 -> q0\nq0,1 -> q0,q1",
+            # AFN de muestra: acepta cadenas que contienen 01 en cualquier lugar.
+            "estados": "q0,q1,q2", "alfabeto": "0,1", "inicial": "q0", "finales": "q2",
+            "reglas": "q0,0 -> q0,q1\nq0,1 -> q0\nq1,1 -> q2\nq2,0 -> q2\nq2,1 -> q2",
         }
         self.custom_maquina = nivel3.crear_desde_reglas(**self.custom_config)
         self.formal_configs = {
@@ -86,12 +91,20 @@ class Simulador(ttk.Frame):
     def _construir(self):
         # El contenido puede superar la altura disponible en portátiles. El marco
         # interior crece normalmente y el lienzo exterior permite desplazarlo.
-        self.scroller = tk.Canvas(self, bg=FONDO_APP, highlightthickness=0)
-        barra = ttk.Scrollbar(self, orient="vertical", command=self.scroller.yview)
+        contenedor = tk.Frame(self, bg=FONDO_APP)
+        contenedor.pack(fill="both", expand=True)
+        self._construir_sidebar(contenedor)
+        zona_principal = tk.Frame(contenedor, bg=FONDO_APP)
+        zona_principal.pack(side="left", fill="both", expand=True)
+        zona_principal.columnconfigure(0, weight=1)
+        zona_principal.rowconfigure(0, weight=1)
+
+        self.scroller = tk.Canvas(zona_principal, bg=FONDO_APP, highlightthickness=0)
+        barra = ttk.Scrollbar(zona_principal, orient="vertical", command=self.scroller.yview)
         self.scroller.configure(yscrollcommand=barra.set)
         barra.pack(side="right", fill="y")
         self.scroller.pack(side="left", fill="both", expand=True)
-        self.page = ttk.Frame(self.scroller)
+        self.page = ttk.Frame(self.scroller, padding=(20, 18))
         ventana = self.scroller.create_window((0, 0), window=self.page, anchor="nw")
         self.page.bind("<Configure>", lambda _e: self.scroller.configure(
             scrollregion=self.scroller.bbox("all")))
@@ -102,7 +115,7 @@ class Simulador(ttk.Frame):
 
         cabecera = ttk.Frame(self.page)
         cabecera.pack(fill="x", pady=(0, 13))
-        ttk.Button(cabecera, text="‹  Todos los niveles", style="Quiet.TButton",
+        ttk.Button(cabecera, text="‹  Simuladores", style="Quiet.TButton",
                    command=self._volver).pack(side="left")
         titulo = ttk.Frame(cabecera)
         titulo.pack(side="left", padx=15)
@@ -128,11 +141,11 @@ class Simulador(ttk.Frame):
         self.izquierda = self.entrada_panel
         self._construir_entrada()
 
-        cuerpo = ttk.Frame(self.page, height=390)
+        cuerpo = self.cuerpo = ttk.Frame(self.page, height=390)
         cuerpo.pack(fill="x", pady=(0, 8))
         cuerpo.pack_propagate(False)
-        cuerpo.columnconfigure(0, weight=5, minsize=510)
-        cuerpo.columnconfigure(1, weight=6, minsize=460)
+        cuerpo.columnconfigure(0, weight=5)
+        cuerpo.columnconfigure(1, weight=6)
         cuerpo.rowconfigure(0, weight=1)
         self.grafico_panel = tk.Frame(cuerpo, bg=PANEL, highlightthickness=1,
                                       highlightbackground=BORDE, padx=12, pady=10)
@@ -143,6 +156,109 @@ class Simulador(ttk.Frame):
         self._construir_visual()
         self._construir_traza()
         self._dibujar_inicial()
+        self._paneles_apilados = None
+        cuerpo.bind("<Configure>", self._adaptar_paneles_con_sidebar, add="+")
+        self.after_idle(self._ajustar_paneles_con_sidebar)
+
+    def _ajustar_paneles_con_sidebar(self):
+        """Apila el diagrama y la traza cuando la ventana deja poco ancho útil."""
+        if not hasattr(self, "cuerpo") or not self.cuerpo.winfo_exists():
+            return
+        apilar = self.cuerpo.winfo_width() < 1120
+        if apilar == self._paneles_apilados:
+            return
+        self._paneles_apilados = apilar
+        if apilar:
+            self.cuerpo.configure(height=790)
+            self.cuerpo.columnconfigure(0, weight=1)
+            self.cuerpo.columnconfigure(1, weight=0)
+            self.cuerpo.rowconfigure(0, weight=1)
+            self.cuerpo.rowconfigure(1, weight=1)
+            self.grafico_panel.grid_configure(row=0, column=0, columnspan=2,
+                                              padx=0, pady=(0, 8))
+            self.derecha.grid_configure(row=1, column=0, columnspan=2,
+                                        padx=0, pady=0)
+        else:
+            self.cuerpo.configure(height=390)
+            self.cuerpo.columnconfigure(0, weight=5)
+            self.cuerpo.columnconfigure(1, weight=6)
+            self.cuerpo.rowconfigure(0, weight=1)
+            self.cuerpo.rowconfigure(1, weight=0)
+            self.grafico_panel.grid_configure(row=0, column=0, columnspan=1,
+                                              padx=(0, 7), pady=0)
+            self.derecha.grid_configure(row=0, column=1, columnspan=1,
+                                        padx=(7, 0), pady=0)
+
+    def _adaptar_paneles_con_sidebar(self, evento):
+        """Reevalúa la disposición al cambiar el tamaño de la vista."""
+        if evento.widget is self.cuerpo:
+            self._ajustar_paneles_con_sidebar()
+
+    def _construir_sidebar(self, contenedor):
+        """Muestra una navegación persistente en los módulos con barra lateral."""
+        barra = tk.Frame(contenedor, bg=PANEL, width=208)
+        barra.pack(side="left", fill="y")
+        barra.pack_propagate(False)
+
+        marca = tk.Frame(barra, bg=PANEL)
+        marca.pack(fill="x", padx=15, pady=(19, 18))
+        icono = tk.Frame(marca, bg=ACENTO, width=42, height=42)
+        icono.pack(side="left", padx=(0, 8))
+        icono.pack_propagate(False)
+        tk.Label(icono, text="λ", bg=ACENTO, fg=FONDO_APP,
+                 font=("Cambria Math", 19, "bold")).pack(fill="both", expand=True)
+        textos = tk.Frame(marca, bg=PANEL)
+        textos.pack(side="left", fill="x", expand=True)
+        tk.Label(textos, text="Chomsky Lab", bg=PANEL, fg=TEXTO,
+                 font=("Segoe UI Semibold", 11, "bold")).pack(anchor="w")
+        tk.Label(textos, text="Jerarquía de Chomsky", bg=PANEL, fg=TEXTO_SUAVE,
+                 font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
+
+        tk.Frame(barra, bg=BORDE, height=1).pack(fill="x", padx=14, pady=(0, 13))
+        tk.Label(barra, text="NAVEGACIÓN", bg=PANEL, fg=TEXTO_SUAVE,
+                 font=("Segoe UI Semibold", 8, "bold")).pack(anchor="w", padx=18, pady=(0, 7))
+        self.nav_nivel_buttons = {}
+        opciones = [(None, "◉", "Simuladores")] + [
+            (3, "◉", "Nivel 3 · Autómata finito"),
+            (2, "▤", "Nivel 2 · Autómata de pila"),
+            (1, "▥", "Nivel 1 · Cinta acotada"),
+            (0, "▦", "Nivel 0 · Máquina de Turing"),
+        ]
+        for nivel, icono, etiqueta in opciones:
+            activo = nivel == self.nivel
+            fondo = SELECCION_ACTIVA if activo else PANEL
+            fila = tk.Frame(barra, bg=fondo, cursor="hand2")
+            fila.pack(fill="x", padx=10, pady=2)
+            tk.Label(fila, text=icono, bg=fondo, fg=COLOR_POR_NIVEL.get(nivel, ACENTO),
+                     width=3, font=("Segoe UI Symbol", 12)).pack(side="left", padx=(4, 1), pady=8)
+            tk.Label(fila, text=etiqueta, bg=fondo, fg=TEXTO,
+                     anchor="w", font=("Segoe UI Semibold" if activo else "Segoe UI", 9)).pack(
+                         side="left", fill="x", expand=True, padx=(0, 5), pady=8)
+            self.nav_nivel_buttons[nivel] = fila
+            if nivel is None:
+                fila.bind("<Button-1>", lambda _e: self.volver())
+                for hijo in fila.winfo_children():
+                    hijo.bind("<Button-1>", lambda _e: self.volver())
+            elif nivel != self.nivel and self.abrir_nivel is not None:
+                fila.bind("<Button-1>", lambda _e, n=nivel: self.abrir_nivel(n))
+                for hijo in fila.winfo_children():
+                    hijo.bind("<Button-1>", lambda _e, n=nivel: self.abrir_nivel(n))
+
+        consejo = tk.Frame(barra, bg=FONDO_APP, padx=12, pady=11)
+        consejo.pack(side="bottom", fill="x", padx=11, pady=12)
+        tk.Label(consejo, text="RUTA DE APRENDIZAJE", bg=FONDO_APP, fg=ACENTO,
+                 font=("Segoe UI Semibold", 8, "bold")).pack(anchor="w")
+        if self.nivel == 0:
+            mensaje = "Sigue el cabezal: lee, escribe y avanza sobre una cinta que puede crecer."
+        elif self.nivel == 2:
+            mensaje = "Sigue cada lectura y observa cómo la pila guarda o retira marcas."
+        elif self.nivel == 1:
+            mensaje = "Los bordes fijan el espacio; la cinta conserva el tamaño de la entrada."
+        else:
+            mensaje = "Configura estados y reglas; el diagrama se construye desde esa definición."
+        tk.Label(consejo, text=mensaje,
+                 bg=FONDO_APP, fg=TEXTO_SUAVE, font=("Segoe UI", 8),
+                 wraplength=158, justify="left").pack(anchor="w", pady=(5, 0))
 
     def _desplazar(self, evento):
         """Desplaza la página al usar la rueda sobre el marco principal."""
@@ -151,14 +267,26 @@ class Simulador(ttk.Frame):
     def _construir_entrada(self):
         tk.Label(self.izquierda, text="Prueba una cadena", bg=PANEL, fg=TEXTO,
                  font=("Segoe UI Semibold", 14, "bold")).pack(anchor="w")
-        tk.Label(self.izquierda, text="Una cadena es una secuencia de símbolos. Escribe la tuya; no hace falta elegir un ejemplo.",
+        subtitulo = ("Configura la máquina en tres pasos. Puedes escribir tu cadena o cargar una prueba; el ejemplo es opcional."
+                     if self.nivel in (1, 2, 3) else
+                     "Elige qué quieres hacer y sigue cada lectura, escritura y movimiento. Puedes escribir la entrada o cargar un ejemplo opcional.")
+        tk.Label(self.izquierda, text=subtitulo,
                  bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 9), wraplength=1100,
                  justify="left").pack(anchor="w", pady=(2, 6))
+
+        if self.nivel == 3:
+            self._construir_pasos_nivel3()
+        elif self.nivel == 2:
+            self._construir_pasos_nivel2()
+        elif self.nivel == 1:
+            self._construir_pasos_nivel1()
+        else:
+            self._construir_pasos_nivel0()
 
         if self.nivel == 0:
             selector = tk.Frame(self.izquierda, bg=PANEL)
             selector.pack(fill="x", pady=(0, 5))
-            tk.Label(selector, text="¿Qué quieres hacer?", bg=PANEL, fg=TEXTO,
+            tk.Label(selector, text="PASO 1 · Elige qué quieres hacer", bg=PANEL, fg=TEXTO,
                      font=("Segoe UI Semibold", 9)).pack(side="left", padx=(0, 10))
             self.modo_combo = ttk.Combobox(selector, textvariable=self.modo_var, state="readonly",
                                            values=("Palíndromo", "Suma unaria", "Definir mi MT"), width=27)
@@ -167,7 +295,7 @@ class Simulador(ttk.Frame):
         elif self.nivel == 1:
             selector = tk.Frame(self.izquierda, bg=PANEL)
             selector.pack(fill="x", pady=(0, 5))
-            tk.Label(selector, text="Patrón del lenguaje", bg=PANEL, fg=TEXTO,
+            tk.Label(selector, text="PASO 1 · Patrón del ejercicio", bg=PANEL, fg=TEXTO,
                      font=("Segoe UI Semibold", 9)).pack(side="left", padx=(0, 10))
             patrones = ttk.Combobox(selector, textvariable=self.patron_n1_var, state="readonly",
                                      values=("aⁿ bⁿ cⁿ", "a bⁿ c²ⁿ", "Definir mi LBA"), width=22)
@@ -176,7 +304,7 @@ class Simulador(ttk.Frame):
         elif self.nivel == 3:
             selector = tk.Frame(self.izquierda, bg=PANEL)
             selector.pack(fill="x", pady=(0, 5))
-            tk.Label(selector, text="Tipo de AFN", bg=PANEL, fg=TEXTO,
+            tk.Label(selector, text="PASO 1 · Tipo de autómata o ejercicio", bg=PANEL, fg=TEXTO,
                      font=("Segoe UI Semibold", 9)).pack(side="left", padx=(0, 10))
             plantilla = ttk.Combobox(selector, textvariable=self.plantilla_var, state="readonly",
                                       values=("Termina en símbolo", "Contiene dos iguales seguidos",
@@ -186,7 +314,7 @@ class Simulador(ttk.Frame):
         elif self.nivel == 2:
             selector = tk.Frame(self.izquierda, bg=PANEL)
             selector.pack(fill="x", pady=(0, 5))
-            tk.Label(selector, text="Tipo de autómata de pila", bg=PANEL, fg=TEXTO,
+            tk.Label(selector, text="PASO 1 · Tipo de ejercicio", bg=PANEL, fg=TEXTO,
                      font=("Segoe UI Semibold", 9)).pack(side="left", padx=(0, 10))
             patron = ttk.Combobox(selector, textvariable=self.patron_n2_var, state="readonly",
                                    values=("xⁿ yⁿ (guiado)", "Definir mi AP"), width=28)
@@ -197,13 +325,21 @@ class Simulador(ttk.Frame):
         self.parametros.pack(fill="x", pady=(0, 9))
         self._dibujar_parametros()
 
+        self.guia_ejercicio = tk.Label(
+            self.izquierda, text="", bg=PANEL_ELEVADO, fg=TEXTO,
+            font=("Segoe UI", 9), padx=11, pady=9, anchor="w",
+            justify="left", wraplength=1100,
+        )
+        self.guia_ejercicio.pack(fill="x", pady=(0, 9))
+
         fila_cadena = tk.Frame(self.izquierda, bg=PANEL)
         fila_cadena.pack(fill="x", pady=(0, 2))
         fila_cadena.columnconfigure(0, weight=3)
         fila_cadena.columnconfigure(1, weight=2)
         grupo_cadena = tk.Frame(fila_cadena, bg=PANEL)
         grupo_cadena.grid(row=0, column=0, sticky="ew", padx=(0, 12))
-        tk.Label(grupo_cadena, text="Cadena de entrada", bg=PANEL, fg=TEXTO,
+        rotulo_cadena = "PASO 3 · Cadena de entrada"
+        tk.Label(grupo_cadena, text=rotulo_cadena, bg=PANEL, fg=TEXTO,
                  font=("Segoe UI Semibold", 9)).pack(anchor="w", pady=(0, 3))
         self.entrada = ttk.Entry(grupo_cadena, textvariable=self.entrada_var,
                                  font=("Consolas", 13), style="Input.TEntry")
@@ -243,6 +379,110 @@ class Simulador(ttk.Frame):
         self.concepto.pack(fill="x", pady=(0, 1))
         self._actualizar_concepto()
 
+    def _construir_pasos_nivel3(self):
+        """Presenta el recorrido de uso antes de abrir las opciones del AFN."""
+        pasos = tk.Frame(self.izquierda, bg=PANEL)
+        pasos.pack(fill="x", pady=(2, 9))
+        for columna in range(3):
+            pasos.columnconfigure(columna, weight=1, uniform="pasos")
+        contenido = (
+            ("1", "Elige el ejercicio", "Usa una plantilla o define tu propio autómata."),
+            ("2", "Configura la máquina", "Ajusta Σ y el símbolo final; o define Q, q₀, F y δ."),
+            ("3", "Prueba y sigue la traza", "Simula; avanza o reproduce cada transición."),
+        )
+        for columna, (numero, titulo, descripcion) in enumerate(contenido):
+            tarjeta = tk.Frame(pasos, bg=PANEL_ELEVADO, padx=9, pady=8,
+                               highlightthickness=1, highlightbackground=BORDE)
+            tarjeta.grid(row=0, column=columna, sticky="ew",
+                         padx=(0 if columna == 0 else 5, 0 if columna == 2 else 5))
+            tk.Label(tarjeta, text=numero, bg=ACENTO, fg=FONDO_APP,
+                     font=("Segoe UI Semibold", 10, "bold"), width=2).pack(side="left", padx=(0, 8))
+            textos = tk.Frame(tarjeta, bg=PANEL_ELEVADO)
+            textos.pack(side="left", fill="x", expand=True)
+            tk.Label(textos, text=titulo, bg=PANEL_ELEVADO, fg=TEXTO,
+                     font=("Segoe UI Semibold", 9, "bold")).pack(anchor="w")
+            tk.Label(textos, text=descripcion, bg=PANEL_ELEVADO, fg=TEXTO_SUAVE,
+                     font=("Segoe UI", 8), wraplength=290,
+                     justify="left").pack(anchor="w", pady=(2, 0))
+
+    def _construir_pasos_nivel2(self):
+        """Presenta el trabajo con la pila como una secuencia de acciones."""
+        pasos = tk.Frame(self.izquierda, bg=PANEL)
+        pasos.pack(fill="x", pady=(2, 9))
+        for columna in range(3):
+            pasos.columnconfigure(columna, weight=1, uniform="pasos_n2")
+        contenido = (
+            ("1", "Elige el modo", "Prueba xⁿyⁿ o define las reglas de tu propio AP."),
+            ("2", "Configura símbolos y n", "x agrega una marca; y retira una. n indica cuántas x e y."),
+            ("3", "Observa la pila", "Simula y sigue cómo cambia en cada símbolo de entrada."),
+        )
+        for columna, (numero, titulo, descripcion) in enumerate(contenido):
+            tarjeta = tk.Frame(pasos, bg=PANEL_ELEVADO, padx=9, pady=8,
+                               highlightthickness=1, highlightbackground=BORDE)
+            tarjeta.grid(row=0, column=columna, sticky="ew",
+                         padx=(0 if columna == 0 else 5, 0 if columna == 2 else 5))
+            tk.Label(tarjeta, text=numero, bg=ACENTO, fg=FONDO_APP,
+                     font=("Segoe UI Semibold", 10, "bold"), width=2).pack(side="left", padx=(0, 8))
+            textos = tk.Frame(tarjeta, bg=PANEL_ELEVADO)
+            textos.pack(side="left", fill="x", expand=True)
+            tk.Label(textos, text=titulo, bg=PANEL_ELEVADO, fg=TEXTO,
+                     font=("Segoe UI Semibold", 9, "bold")).pack(anchor="w")
+            tk.Label(textos, text=descripcion, bg=PANEL_ELEVADO, fg=TEXTO_SUAVE,
+                     font=("Segoe UI", 8), wraplength=290,
+                     justify="left").pack(anchor="w", pady=(2, 0))
+
+    def _construir_pasos_nivel1(self):
+        """Explica cómo elegir el lenguaje y leer el recorrido de la cinta acotada."""
+        pasos = tk.Frame(self.izquierda, bg=PANEL)
+        pasos.pack(fill="x", pady=(2, 9))
+        for columna in range(3):
+            pasos.columnconfigure(columna, weight=1, uniform="pasos_n1")
+        contenido = (
+            ("1", "Elige el ejercicio", "Prueba un patrón guiado o define un LBA con tus reglas."),
+            ("2", "Prepara símbolos o reglas", "En modo guiado, n genera la cadena; en modo propio, defines δ."),
+            ("3", "Sigue el cabezal", "Observa marcas y movimientos entre ⊢ y ⊣."),
+        )
+        for columna, (numero, titulo, descripcion) in enumerate(contenido):
+            tarjeta = tk.Frame(pasos, bg=PANEL_ELEVADO, padx=9, pady=8,
+                               highlightthickness=1, highlightbackground=BORDE)
+            tarjeta.grid(row=0, column=columna, sticky="ew",
+                         padx=(0 if columna == 0 else 5, 0 if columna == 2 else 5))
+            tk.Label(tarjeta, text=numero, bg=ACENTO, fg=FONDO_APP,
+                     font=("Segoe UI Semibold", 10, "bold"), width=2).pack(side="left", padx=(0, 8))
+            textos = tk.Frame(tarjeta, bg=PANEL_ELEVADO)
+            textos.pack(side="left", fill="x", expand=True)
+            tk.Label(textos, text=titulo, bg=PANEL_ELEVADO, fg=TEXTO,
+                     font=("Segoe UI Semibold", 9, "bold")).pack(anchor="w")
+            tk.Label(textos, text=descripcion, bg=PANEL_ELEVADO, fg=TEXTO_SUAVE,
+                     font=("Segoe UI", 8), wraplength=290,
+                     justify="left").pack(anchor="w", pady=(2, 0))
+
+    def _construir_pasos_nivel0(self):
+        """Aclara la tarea, su formato de entrada y la lectura de la cinta de Turing."""
+        pasos = tk.Frame(self.izquierda, bg=PANEL)
+        pasos.pack(fill="x", pady=(2, 9))
+        for columna in range(3):
+            pasos.columnconfigure(columna, weight=1, uniform="pasos_n0")
+        contenido = (
+            ("1", "Elige la tarea", "Prueba palíndromos, suma unaria o define tu propia MT."),
+            ("2", "Configura símbolos o reglas", "Indica el alfabeto y formato de la tarea, o edita δ."),
+            ("3", "Ejecuta y sigue la cinta", "Mira qué lee, qué escribe y hacia dónde se mueve el cabezal."),
+        )
+        for columna, (numero, titulo, descripcion) in enumerate(contenido):
+            tarjeta = tk.Frame(pasos, bg=PANEL_ELEVADO, padx=9, pady=8,
+                               highlightthickness=1, highlightbackground=BORDE)
+            tarjeta.grid(row=0, column=columna, sticky="ew",
+                         padx=(0 if columna == 0 else 5, 0 if columna == 2 else 5))
+            tk.Label(tarjeta, text=numero, bg=ACENTO, fg=FONDO_APP,
+                     font=("Segoe UI Semibold", 10, "bold"), width=2).pack(side="left", padx=(0, 8))
+            textos = tk.Frame(tarjeta, bg=PANEL_ELEVADO)
+            textos.pack(side="left", fill="x", expand=True)
+            tk.Label(textos, text=titulo, bg=PANEL_ELEVADO, fg=TEXTO,
+                     font=("Segoe UI Semibold", 9, "bold")).pack(anchor="w")
+            tk.Label(textos, text=descripcion, bg=PANEL_ELEVADO, fg=TEXTO_SUAVE,
+                     font=("Segoe UI", 8), wraplength=290,
+                     justify="left").pack(anchor="w", pady=(2, 0))
+
     def _dibujar_parametros(self):
         for widget in self.parametros.winfo_children():
             widget.destroy()
@@ -252,11 +492,24 @@ class Simulador(ttk.Frame):
             nombres = {2: "AP", 1: "LBA", 0: "MT"}
             nombre = nombres[self.nivel]
             maquina = self.formal_maquinas[self.nivel]
-            tk.Label(self.parametros, text=f"{nombre} definido por transiciones", bg=PANEL,
+            if self.nivel == 2:
+                titulo = "PASO 2 · Define el autómata y su memoria"
+            elif self.nivel == 1:
+                titulo = "PASO 2 · Define el LBA por transiciones"
+            else:
+                titulo = "PASO 2 · Define la MT por transiciones"
+            tk.Label(self.parametros, text=titulo, bg=PANEL,
                      fg=TEXTO, font=("Segoe UI Semibold", 9)).pack(anchor="w")
-            tk.Label(self.parametros,
-                     text=f"{len(maquina['estados'])} estados · {len(maquina['reglas'])} reglas · "
-                          "puedes editar la definición completa.",
+            resumen = f"{len(maquina['estados'])} estados · {len(maquina['reglas'])} reglas"
+            if self.nivel == 2:
+                descripcion = (f"{resumen}. Define Q, Σ, alfabeto de pila Γ, estado inicial, "
+                               "finales, fondo y transiciones δ.")
+            elif self.nivel == 1:
+                descripcion = f"{resumen}. Puedes editar la definición completa; la cinta y sus límites se conservan."
+            else:
+                descripcion = (f"{resumen}. Cada regla lee, escribe y mueve la cabeza. "
+                               "La cinta usa □ como blanco y puede crecer en ambos sentidos.")
+            tk.Label(self.parametros, text=descripcion,
                      bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 5))
             ttk.Button(self.parametros, text=f"Editar reglas del {nombre}", style="Quiet.TButton",
                        command=self._editar_formal).pack(anchor="w")
@@ -264,57 +517,89 @@ class Simulador(ttk.Frame):
 
         if self.nivel == 3:
             if self.plantilla_var.get() == "Definir mi AFN-ε":
-                tk.Label(self.parametros, text="Autómata definido por reglas", bg=PANEL, fg=TEXTO,
+                tk.Label(self.parametros, text="PASO 2 · Define tu autómata por estados y reglas", bg=PANEL, fg=TEXTO,
                          font=("Segoe UI Semibold", 9)).pack(anchor="w")
                 tk.Label(self.parametros,
-                         text="Estados, alfabeto, estado inicial, finales y transiciones editables.",
+                         text="Completa Q, Σ, estado inicial q₀, estados finales F y la función de transición δ.",
                          bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 5))
-                ttk.Button(self.parametros, text="Editar reglas del AFN-ε", style="Quiet.TButton",
+                ttk.Button(self.parametros, text="Abrir editor de estados y transiciones", style="Quiet.TButton",
                            command=self._editar_afn).pack(anchor="w")
                 return
             pares = self.plantilla_var.get() == "Contiene dos iguales seguidos"
-            titulo = "Alfabeto del AFN ramificado (dos símbolos)" if pares else "Alfabeto y símbolo que debe quedar al final"
+            titulo = ("PASO 2 · Alfabeto del AFN ramificado (dos símbolos)" if pares else
+                      "PASO 2 · Alfabeto y símbolo que debe quedar al final")
             tk.Label(self.parametros, text=titulo, bg=PANEL,
                      fg=TEXTO, font=("Segoe UI Semibold", 9)).grid(row=0, column=0, columnspan=2, sticky="w")
             self._campo_parametro(self.parametros, "Alfabeto (separa con comas)", self.alfabeto_var, 0, 1)
             if not pares:
                 self._campo_parametro(self.parametros, "Final", self.final_var, 1, 1)
-            explicacion = ("Dos caminos ε: uno detecta 00 y otro 11 (o los símbolos elegidos)."
+            explicacion = ("Dos caminos ε buscan cada pareja; el prefijo y el sufijo se permiten."
                            if pares else "Ejemplo: a,b,1 permite mezclar letras y números.")
             tk.Label(self.parametros, text=explicacion,
                      bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8)).grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         elif self.nivel == 2:
-            tk.Label(self.parametros, text="Elige dos símbolos distintos", bg=PANEL,
+            tk.Label(self.parametros, text="PASO 2 · Configura los bloques xⁿyⁿ", bg=PANEL,
                      fg=TEXTO, font=("Segoe UI Semibold", 9)).grid(row=0, column=0, columnspan=2, sticky="w")
-            self._campo_parametro(self.parametros, "Apila una marca por", self.apilar_var, 0, 1)
-            self._campo_parametro(self.parametros, "Retira una marca por", self.desapilar_var, 1, 1)
-            tk.Label(self.parametros, text="También puedes probar 0011: se apilan con 0 y se retiran con 1.",
+            self._campo_parametro(self.parametros, "Símbolo x · apila una A", self.apilar_var, 0, 1)
+            self._campo_parametro(self.parametros, "Símbolo y · retira una A", self.desapilar_var, 1, 1)
+            a = self.apilar_var.get().strip() or "x"
+            b = self.desapilar_var.get().strip() or "y"
+            n = int(self.n_var.get()) if self.n_var.get().isdigit() else 2
+            muestra = f"{a*n}{b*n}" if len(a) == len(b) == 1 and a != b else "xxyy"
+            tk.Label(self.parametros,
+                     text=f"n cuenta repeticiones; no se escribe en la cadena. Con n={n}, prueba {muestra}.",
                      bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8), wraplength=440,
                      justify="left").grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
             self._control_n(3, 2, 6)
         elif self.nivel == 1:
-            tk.Label(self.parametros, text="Escribe un carácter por bloque; n controla las repeticiones", bg=PANEL,
+            doble = self.patron_n1_var.get() == "a bⁿ c²ⁿ"
+            tk.Label(self.parametros, text="PASO 2 · Configura los símbolos y el contador n", bg=PANEL,
                      fg=TEXTO, font=("Segoe UI Semibold", 9)).grid(row=0, column=0, columnspan=3, sticky="w")
-            self._campo_parametro(self.parametros, "Símbolo a", self.bloque_a_var, 0, 1)
-            self._campo_parametro(self.parametros, "Símbolo b", self.bloque_b_var, 1, 1)
-            self._campo_parametro(self.parametros, "Símbolo c", self.bloque_c_var, 2, 1)
-            nota = ("a bⁿ c²ⁿ: a aparece una vez; por cada b hay dos c. Este patrón también es libre de contexto."
-                    if self.patron_n1_var.get() == "a bⁿ c²ⁿ" else
-                    "aⁿ bⁿ cⁿ: los tres símbolos aparecen n veces; X, Y y Z son marcas de cinta.")
-            tk.Label(self.parametros, text=nota,
-                     bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8), wraplength=440,
-                     justify="left").grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
-            self._control_n(3, 3, 5)
+            self._campo_parametro(self.parametros, "Símbolo x · primer bloque", self.bloque_a_var, 0, 1)
+            self._campo_parametro(self.parametros, "Símbolo y · segundo bloque", self.bloque_b_var, 1, 1)
+            self._campo_parametro(self.parametros, "Símbolo z · tercer bloque", self.bloque_c_var, 2, 1)
+            self.nota_nivel1 = tk.Label(
+                self.parametros, text=self._nota_configuracion_nivel1(),
+                bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8), wraplength=900,
+                justify="left",
+            )
+            self.nota_nivel1.grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
+            descripcion_n = ("Elige n de 1 a 5; genera x·yⁿ·z²ⁿ."
+                             if doble else
+                             "Elige n de 1 a 5; genera xⁿ·yⁿ·zⁿ.")
+            self._control_n(3, 3, 5, descripcion_n)
         elif self._modo_actual() == "palindromo":
-            tk.Label(self.parametros, text="Dos símbolos que pueden aparecer en el palíndromo", bg=PANEL,
+            tk.Label(self.parametros, text="PASO 2 · Símbolos del palíndromo", bg=PANEL,
                      fg=TEXTO, font=("Segoe UI Semibold", 9)).grid(row=0, column=0, sticky="w")
-            self._campo_parametro(self.parametros, "Separados por coma", self.simbolos_tm_var, 0, 1, colspan=1)
-            tk.Label(self.parametros, text="Ejemplos: 0,1 o a,b. X e Y quedan reservadas para las marcas.",
-                     bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8)).grid(row=2, column=0, sticky="w", pady=(4, 0))
+            self._campo_parametro(self.parametros, "Símbolos de entrada (separados por coma)",
+                                  self.simbolos_tm_var, 0, 1, colspan=1)
+            tk.Label(self.parametros,
+                     text="Usa dos símbolos distintos, por ejemplo 0,1 o a,b. X, Y y □ quedan reservados.",
+                     bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8), wraplength=620,
+                     justify="left").grid(row=2, column=0, sticky="w", pady=(4, 0))
         else:
-            tk.Label(self.parametros, text="Usa 1 para cada unidad y + entre los dos sumandos.",
-                     bg=PANEL, fg=TEXTO, font=("Segoe UI", 9), wraplength=430,
-                     justify="left").pack(anchor="w")
+            tk.Label(self.parametros, text="PASO 2 · Escribe los sumandos en unario", bg=PANEL,
+                     fg=TEXTO, font=("Segoe UI Semibold", 9)).pack(anchor="w")
+            tk.Label(self.parametros,
+                     text="Cada 1 representa una unidad y + separa los dos números. Elige cuántas unidades tendrá cada sumando.",
+                     bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8), wraplength=720,
+                     justify="left").pack(anchor="w", pady=(2, 5))
+            controles = tk.Frame(self.parametros, bg=PANEL)
+            controles.pack(anchor="w")
+            tk.Label(controles, text="n =", bg=PANEL, fg=TEXTO,
+                     font=("Segoe UI Semibold", 9)).pack(side="left")
+            n_control = tk.Spinbox(controles, from_=1, to=14, width=4, textvariable=self.n_suma_var,
+                                   command=self._actualizar_concepto, font=("Consolas", 10))
+            n_control.pack(side="left", padx=(4, 10))
+            n_control.bind("<KeyRelease>", lambda _evento: self._actualizar_concepto())
+            tk.Label(controles, text="m =", bg=PANEL, fg=TEXTO,
+                     font=("Segoe UI Semibold", 9)).pack(side="left")
+            m_control = tk.Spinbox(controles, from_=1, to=14, width=4, textvariable=self.m_suma_var,
+                                   command=self._actualizar_concepto, font=("Consolas", 10))
+            m_control.pack(side="left", padx=(4, 10))
+            m_control.bind("<KeyRelease>", lambda _evento: self._actualizar_concepto())
+            ttk.Button(controles, text="Generar entrada", style="Quiet.TButton",
+                       command=self._generar_suma_unaria).pack(side="left")
 
     def _campo_parametro(self, parent, etiqueta, variable, columna, fila, colspan=1):
         marco = tk.Frame(parent, bg=PANEL)
@@ -331,16 +616,17 @@ class Simulador(ttk.Frame):
     def _editar_afn(self):
         """Edita una máquina completa; aplica los cambios solo tras validarlos."""
         ventana = tk.Toplevel(self)
-        ventana.title("Definir AFN-ε | Chomsky Lab")
+        ventana.title("Definir autómata finito | Chomsky Lab")
         ventana.geometry("760x620")
         ventana.minsize(600, 510)
         ventana.configure(bg=PANEL)
         ventana.transient(self.winfo_toplevel())
         marco = tk.Frame(ventana, bg=PANEL, padx=20, pady=16)
         marco.pack(fill="both", expand=True)
-        tk.Label(marco, text="Define tu propio AFN-ε", bg=PANEL, fg=TEXTO,
+        tk.Label(marco, text="Define tu autómata finito", bg=PANEL, fg=TEXTO,
                  font=("Segoe UI Semibold", 18, "bold")).pack(anchor="w")
-        tk.Label(marco, text="Los símbolos de entrada tienen un carácter. ε representa una transición sin leer entrada.",
+        tk.Label(marco, text="Puedes definir un AFN o un AFN-ε: hasta 8 estados y 6 símbolos de entrada. "
+                           "Cada símbolo ocupa un carácter; ε cambia de estado sin leer entrada.",
                  bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 12))
         campos = {}
         for clave, titulo in (("estados", "Estados (separados por comas)"),
@@ -353,10 +639,12 @@ class Simulador(ttk.Frame):
             variable = tk.StringVar(value=self.custom_config[clave])
             ttk.Entry(fila, textvariable=variable, style="Input.TEntry").pack(side="left", fill="x", expand=True)
             campos[clave] = variable
-        tk.Label(marco, text="Transiciones: origen,símbolo -> destino1,destino2", bg=PANEL, fg=TEXTO,
+        tk.Label(marco, text="PASO 3 · Función de transición δ (una regla por línea)", bg=PANEL, fg=TEXTO,
                  font=("Segoe UI Semibold", 10, "bold")).pack(anchor="w", pady=(12, 3))
-        tk.Label(marco, text="Una regla por línea. Ejemplo: q0,1 -> q0,q1     o     q0,ε -> q1",
-                 bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        tk.Label(marco, text="Formato: origen,símbolo -> destinos. Ejemplo: q0,0 -> q0,q1 crea dos rutas. "
+                           "Para una transición vacía: q0,ε -> q1. Puedes dejar transiciones sin definir.",
+                 bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 9),
+                 wraplength=690, justify="left").pack(anchor="w", pady=(0, 5))
         editor = tk.Text(marco, height=10, font=("Consolas", 11), bg=CAMPO, fg=TEXTO,
                          insertbackground=TEXTO, undo=True, wrap="none")
         editor.pack(fill="both", expand=True)
@@ -376,6 +664,7 @@ class Simulador(ttk.Frame):
                 return
             self.custom_config = config
             self.custom_maquina = maquina
+            self._actualizar_ejemplos()
             self._actualizar_concepto()
             self._invalidar_traza()
             self.resultado.configure(text="AFN-ε validado. Escribe una cadena y pulsa Simular cadena.", fg=ACENTO)
@@ -403,12 +692,16 @@ class Simulador(ttk.Frame):
         marco.pack(fill="both", expand=True)
         tk.Label(marco, text=f"Define tu {nombre} por transiciones", bg=PANEL, fg=TEXTO,
                  font=("Segoe UI Semibold", 18, "bold")).pack(anchor="w")
-        explicacion = (
-            "AP: estado,entrada,tope -> siguiente,sustitución. ε no consume entrada o desapila; "
-            "la sustitución se escribe desde la base hacia el tope."
-            if nivel == 2 else
-            "Cinta: estado,lee -> siguiente,escribe,mueve. Usa L (izquierda), R (derecha) o S (quieto)."
-        )
+        if nivel == 2:
+            explicacion = ("AP: estado,entrada,tope -> siguiente,sustitución. ε no consume entrada o desapila; "
+                           "la sustitución se escribe desde la base hacia el tope.")
+        elif nivel == 1:
+            explicacion = ("LBA: la cinta inicial es ⊢ entrada ⊣. Usa estado,lee -> siguiente,escribe,mueve; "
+                           "mueve con L, R o S. Los delimitadores no se cruzan, borran ni crean.")
+        else:
+            explicacion = ("MT: cada regla tiene el formato estado,lee -> siguiente,escribe,mueve. "
+                           "Usa L (izquierda), R (derecha) o S (quieto); □ representa una celda vacía. "
+                           "La cinta puede extenderse a ambos lados y alcanzar un estado final acepta la entrada.")
         tk.Label(marco, text=explicacion, bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 9),
                  justify="left", wraplength=760).pack(anchor="w", pady=(3, 12))
         titulos = {"estados": "Estados", "alfabeto": "Alfabeto de entrada",
@@ -462,18 +755,31 @@ class Simulador(ttk.Frame):
         ttk.Button(botones, text="Validar y aplicar", style="Accent.TButton",
                    command=aplicar).pack(side="left")
 
-    def _control_n(self, fila, columnas, maximo):
-        """Genera xⁿyⁿ o xⁿyⁿzⁿ sin confundir n con el alfabeto."""
+    def _control_n(self, fila, columnas, maximo, descripcion=None):
+        """Añade un contador para generar bloques sin confundir n con un símbolo."""
         control = tk.Frame(self.parametros, bg=PANEL)
         control.grid(row=fila, column=0, columnspan=columnas, sticky="w", pady=(8, 0))
         tk.Label(control, text="Repeticiones n =", bg=PANEL, fg=TEXTO,
                  font=("Segoe UI Semibold", 9)).pack(side="left", padx=(0, 7))
-        tk.Spinbox(control, from_=1, to=maximo, width=4, textvariable=self.n_var,
-                   command=self._actualizar_concepto, font=("Consolas", 10)).pack(side="left")
+        repeticion = tk.Spinbox(control, from_=1, to=maximo, width=4, textvariable=self.n_var,
+                                command=self._actualizar_concepto, font=("Consolas", 10))
+        repeticion.pack(side="left")
+        repeticion.bind("<KeyRelease>", lambda _evento: self._actualizar_concepto())
         ttk.Button(control, text="Generar cadena", style="Quiet.TButton",
                    command=self._generar_con_n).pack(side="left", padx=(8, 0))
-        tk.Label(control, text=f"Elige de 1 a {maximo}; se repite cada símbolo n veces.",
+        tk.Label(control, text=descripcion or f"Elige de 1 a {maximo}; se repite cada símbolo n veces.",
                  bg=PANEL, fg=TEXTO_SUAVE, font=("Segoe UI", 8)).pack(side="left", padx=(10, 0))
+
+    def _nota_configuracion_nivel1(self):
+        """Mantiene visible la cadena que producirán los símbolos y el valor n."""
+        a, b, c = (v.get().strip() for v in (self.bloque_a_var, self.bloque_b_var, self.bloque_c_var))
+        if (any(len(s) != 1 for s in (a, b, c)) or len({a, b, c}) != 3
+                or any(s in nivel1.MARCAS + nivel1.DELIMITADORES for s in (a, b, c))):
+            return "Usa tres símbolos distintos, de un carácter. X, Y, Z, ⊢ y ⊣ quedan reservados."
+        n = min(5, max(1, int(self.n_var.get()))) if self.n_var.get().isdigit() else 2
+        if self.patron_n1_var.get() == "a bⁿ c²ⁿ":
+            return f"n={n} genera {a + b*n + c*(2*n)}: una {a}, {n} símbolos {b} y {2*n} símbolos {c}."
+        return f"n={n} genera {a*n + b*n + c*n}: {n} símbolos {a}, {n} {b} y {n} {c}."
 
     def _generar_con_n(self):
         """Copia la cadena generada a la entrada y permite editarla antes de simular."""
@@ -486,8 +792,13 @@ class Simulador(ttk.Frame):
         if not 1 <= n <= maximo:
             self.resultado.configure(text=f"Elige n entre 1 y {maximo}.", fg=ESTADO_ERROR)
             return
-        if any(len(s) != 1 for s in simbolos) or len(set(simbolos)) != len(simbolos):
-            self.resultado.configure(text="Cada bloque necesita un símbolo distinto de un carácter.", fg=ESTADO_ERROR)
+        reservados = nivel1.MARCAS + nivel1.DELIMITADORES if self.nivel == 1 else ()
+        if (any(len(s) != 1 for s in simbolos) or len(set(simbolos)) != len(simbolos)
+                or any(s in reservados for s in simbolos)):
+            mensaje = ("Escribe un carácter diferente para x y para y; n genera sus repeticiones."
+                       if self.nivel == 2 else
+                       "Usa un carácter distinto por bloque; X, Y, Z, ⊢ y ⊣ están reservados.")
+            self.resultado.configure(text=mensaje, fg=ESTADO_ERROR)
             return
         if self.nivel == 1 and self.patron_n1_var.get() == "a bⁿ c²ⁿ":
             cadena = simbolos[0] + simbolos[1] * n + simbolos[2] * (2 * n)
@@ -495,6 +806,32 @@ class Simulador(ttk.Frame):
             cadena = "".join(s * n for s in simbolos)
         self.entrada_var.set(cadena)
         self.resultado.configure(text=f"Cadena generada: {cadena}. Pulsa Simular cadena para ver cada paso.", fg=ACENTO)
+        self.entrada.focus_set()
+        self._actualizar_concepto()
+
+    def _repeticiones_suma(self):
+        """Devuelve n y m si describen dos sumandos positivos manejables por la UI."""
+        try:
+            n, m = int(self.n_suma_var.get()), int(self.m_suma_var.get())
+        except ValueError:
+            return None
+        if n < 1 or m < 1 or n + m + 1 > 28:
+            return None
+        return n, m
+
+    def _generar_suma_unaria(self):
+        """Genera 1ⁿ+1ᵐ en el campo normal para poder editarlo antes de simular."""
+        cantidades = self._repeticiones_suma()
+        if cantidades is None:
+            self.resultado.configure(text="Elige n y m positivos; la entrada debe ocupar hasta 28 caracteres.",
+                                     fg=ESTADO_ERROR)
+            return
+        n, m = cantidades
+        cadena = "1" * n + "+" + "1" * m
+        self.entrada_var.set(cadena)
+        self._invalidar_traza()
+        self.resultado.configure(text=f"Entrada generada: {cadena}. Cada 1 vale una unidad; ahora puedes simular o editarla.",
+                                 fg=ACENTO)
         self.entrada.focus_set()
         self._actualizar_concepto()
 
@@ -699,11 +1036,29 @@ class Simulador(ttk.Frame):
             return
         opciones = []
         if self._es_formal():
-            opciones = []
+            # Solo se muestran resultados conocidos mientras se conserven las
+            # reglas iniciales de los autómatas formales.
+            if self.nivel == 2 and not self.formal_editada[2]:
+                opciones = [("Acepta · aabb", "aabb", True),
+                            ("Rechaza · aab", "aab", False),
+                            ("Rechaza · abba", "abba", False)]
+            elif self.nivel == 1 and not self.formal_editada[1]:
+                opciones = [("Acepta · ab", "ab", True),
+                            ("Rechaza · a", "a", False),
+                            ("Rechaza · ba", "ba", False)]
+            elif self.nivel == 0 and not self.formal_editada[0]:
+                opciones = [("Acepta · 111 (produce 1111)", "111", True),
+                            ("Rechaza · 0 (fuera de Σ)", "0", False)]
         elif self.nivel == 3:
             simbolos = self._simbolos_configurados()
             if self.plantilla_var.get() == "Definir mi AFN-ε":
-                opciones = []
+                acepta, rechaza = self._buscar_ejemplos_afn()
+                if acepta is not None:
+                    etiqueta = "ε (vacía)" if acepta == "" else acepta
+                    opciones.append((f"Acepta · {etiqueta}", acepta or "ε", True))
+                if rechaza is not None:
+                    etiqueta = "ε (vacía)" if rechaza == "" else rechaza
+                    opciones.append((f"Rechaza · {etiqueta}", rechaza or "ε", False))
             elif self.plantilla_var.get() == "Contiene dos iguales seguidos":
                 if len(simbolos) == 2 and len(set(simbolos)) == 2:
                     a, b = simbolos
@@ -723,10 +1078,15 @@ class Simulador(ttk.Frame):
             a, b = self.apilar_var.get().strip(), self.desapilar_var.get().strip()
             if len(a) == len(b) == 1 and a != b:
                 opciones = [(f"Acepta · {a}{b}", a + b, True), (f"Acepta · {a*2}{b*2}", a*2 + b*2, True),
-                            (f"Rechaza · {a*2}{b}", a*2 + b, False), (f"Rechaza · {b}{a}", b + a, False)]
+                            (f"Rechaza · {a*2}{b}", a*2 + b, False), (f"Rechaza · {b}{a}", b + a, False),
+                            ("Rechaza · ε (vacía)", "ε", False)]
         elif self.nivel == 1:
             a, b, c = (s.strip() for s in (self.bloque_a_var.get(), self.bloque_b_var.get(), self.bloque_c_var.get()))
-            if all(len(s) == 1 for s in (a, b, c)) and len({a, b, c}) == 3:
+            simbolos_reservados = nivel1.MARCAS + nivel1.DELIMITADORES
+            configuracion_valida = (all(len(s) == 1 for s in (a, b, c))
+                                    and len({a, b, c}) == 3
+                                    and not any(s in simbolos_reservados for s in (a, b, c)))
+            if configuracion_valida:
                 if self.patron_n1_var.get() == "a bⁿ c²ⁿ":
                     opciones = [(f"Acepta · {a+b+c*2}", a+b+c*2, True),
                                 (f"Acepta · {a+b*2+c*4}", a+b*2+c*4, True),
@@ -739,7 +1099,9 @@ class Simulador(ttk.Frame):
                                 (f"Rechaza · {a}{c}{b}", a+c+b, False)]
         elif self._modo_actual() == "palindromo":
             simbolos = self._simbolos_configurados()
-            if len(simbolos) == 2 and simbolos[0] != simbolos[1]:
+            if (len(simbolos) == 2 and all(len(s) == 1 for s in simbolos)
+                    and len(set(simbolos)) == 2
+                    and not any(s in ("X", "Y", "□") for s in simbolos)):
                 a, b = simbolos
                 opciones = [(f"Acepta · {a}", a, True), (f"Acepta · {a}{b}{a}", a+b+a, True),
                             (f"Acepta · {a}{b}{b}{a}", a+b+b+a, True),
@@ -752,6 +1114,27 @@ class Simulador(ttk.Frame):
         valores = ["Elige un ejemplo opcional", *self.ejemplo_map.keys()]
         self.ejemplos.configure(values=valores)
         self.ejemplo_var.set(valores[0])
+
+    def _buscar_ejemplos_afn(self):
+        """Encuentra las cadenas aceptada y rechazada más cortas del AFN actual."""
+        afd = nivel3.construir_afd(self.custom_maquina)
+        pendientes = [(afd["inicial"], "")]
+        visitados = {afd["inicial"]}
+        aceptada = rechazada = None
+        indice = 0
+        while indice < len(pendientes) and (aceptada is None or rechazada is None):
+            estado, cadena = pendientes[indice]
+            indice += 1
+            if estado in afd["finales"] and aceptada is None:
+                aceptada = cadena
+            elif estado not in afd["finales"] and rechazada is None:
+                rechazada = cadena
+            for simbolo in self.custom_maquina["alfabeto"]:
+                destino = afd["tabla"][(estado, simbolo)]
+                if destino not in visitados:
+                    visitados.add(destino)
+                    pendientes.append((destino, cadena + simbolo))
+        return aceptada, rechazada
 
     def _seleccion_ejemplo(self, _evento=None):
         seleccionado = self.ejemplo_var.get()
@@ -776,6 +1159,9 @@ class Simulador(ttk.Frame):
     def _actualizar_concepto(self):
         if not hasattr(self, "concepto"):
             return
+        if (self.nivel == 1 and hasattr(self, "nota_nivel1")
+                and self.nota_nivel1.winfo_exists()):
+            self.nota_nivel1.configure(text=self._nota_configuracion_nivel1())
         if self.nivel == 3:
             if self.plantilla_var.get() == "Definir mi AFN-ε":
                 m = self.custom_maquina
@@ -790,8 +1176,16 @@ class Simulador(ttk.Frame):
             if self.nivel == 2:
                 text = ("AP propio: las reglas δ(estado, entrada/ε, tope) cambian el estado y la pila. "
                         "Se acepta en un estado final tras consumir la entrada.")
+            elif self.nivel == 1:
+                text = (f"LBA propia: Q={nivel3.etiqueta(maquina['estados'])}, "
+                        f"Σ={nivel3.etiqueta(maquina['alfabeto'])}, "
+                        f"q₀={maquina['inicial']}, F={nivel3.etiqueta(maquina['finales'])}. "
+                        "Las reglas leen, escriben y mueven la cabeza dentro de ⊢ entrada ⊣.")
+            elif not self.formal_editada[0]:
+                text = ("La MT de muestra recorre el bloque de unos; al encontrar □ escribe otro 1 y acepta. "
+                        "Por eso 111 se transforma en 1111. El símbolo 0 no pertenece al alfabeto de entrada Σ={1}.")
             else:
-                limite = "entre ⊢ y ⊣" if self.nivel == 1 else "sobre una cinta extendible"
+                limite = "sobre una cinta extendible"
                 text = (f"{maquina['tipo'].upper()} propia: cada regla lee, escribe y mueve el cabezal "
                         f"{limite}; se acepta al alcanzar un estado final.")
         elif self.nivel == 2:
@@ -812,21 +1206,46 @@ class Simulador(ttk.Frame):
                     if all(len(s) == 1 for s in (a, b, c)) else
                     "Escribe a, b y c como símbolos de un carácter; el control n genera las repeticiones.")
         elif self._modo_actual() == "suma":
-            text = "En unario, 111 representa 3. La entrada 111+11 representa 3 + 2 y la cinta termina como 11111."
+            cantidades = self._repeticiones_suma()
+            if cantidades is None:
+                text = "Elige dos cantidades positivas para generar una suma de hasta 28 caracteres."
+            else:
+                n, m = cantidades
+                entrada = "1" * n + "+" + "1" * m
+                salida = "1" * (n + m)
+                text = (f"n={n} genera {n} unos y m={m} genera {m}; por eso {entrada} representa {n}+{m}. "
+                        f"La MT deja {salida}, que contiene {n+m} unidades.")
         else:
             simbolos = self._simbolos_configurados()
-            muestra = " y ".join(simbolos) if len(simbolos) == 2 else "dos símbolos"
-            text = f"Un palíndromo se lee igual en ambos sentidos. Este modo permite usar {muestra}."
+            configuracion_valida = (len(simbolos) == 2 and all(len(s) == 1 for s in simbolos)
+                                    and len(set(simbolos)) == 2
+                                    and not any(s in ("X", "Y", "□") for s in simbolos))
+            if configuracion_valida:
+                text = (f"Un palíndromo se lee igual en ambos sentidos. La entrada usa {simbolos[0]} y {simbolos[1]}; "
+                        "X e Y marcan los símbolos que la máquina ya comparó.")
+            else:
+                text = ("Configura dos símbolos diferentes de un carácter. X, Y y □ están reservados "
+                        "para las marcas y las celdas vacías.")
         self.concepto.configure(text=text)
         # El ejemplo superior se actualiza al editar el alfabeto, sin modificar la cadena escrita.
         if self.nivel == 3:
             if self.plantilla_var.get() == "Definir mi AFN-ε":
-                simbolos = ", ".join(self.custom_maquina["alfabeto"])
-                ejemplo = f"Ejemplo rápido: prueba una cadena con símbolos de {{{simbolos}}}; decide tu tabla de reglas."
+                acepta, rechaza = self._buscar_ejemplos_afn()
+                if acepta is not None:
+                    muestra = "ε" if acepta == "" else acepta
+                    ejemplo = f"Ejemplo rápido: «{muestra}» se acepta con las reglas actuales."
+                elif rechaza is not None:
+                    muestra = "ε" if rechaza == "" else rechaza
+                    ejemplo = f"Ejemplo rápido: «{muestra}» se rechaza con las reglas actuales."
+                else:
+                    ejemplo = "Ejemplo rápido: escribe una cadena con símbolos del alfabeto configurado."
             elif self.plantilla_var.get() == "Contiene dos iguales seguidos":
                 simbolos = self._simbolos_configurados()
-                a, b = (simbolos + ["0", "1"])[:2]
-                ejemplo = f"Ejemplo rápido: {a+b+b+a} acepta porque contiene {b+b}; {a+b+a+b} rechaza."
+                if len(simbolos) == 2 and simbolos[0] != simbolos[1]:
+                    a, b = simbolos
+                    ejemplo = f"Ejemplo rápido: {a+b+b+a} acepta porque contiene {b+b}; {a+b+a+b} rechaza."
+                else:
+                    ejemplo = "Configura dos símbolos distintos, como 0,1 o a,b, para probar esta plantilla."
             else:
                 f = self.final_var.get().strip() or "a"
                 ejemplo = f"Ejemplo rápido: '{f}' se acepta si está en el alfabeto y es el último símbolo."
@@ -837,26 +1256,299 @@ class Simulador(ttk.Frame):
                            1: "ab se acepta con las reglas de muestra.",
                            0: "111 se transforma en 1111 con las reglas de muestra."}[self.nivel]
                 ejemplo = f"Ejemplo inicial: {muestra}"
+            elif self.nivel == 0:
+                ejemplo = (f"Prueba una cadena formada con {{{simbolos}}}; "
+                           "su resultado depende de las reglas δ actuales.")
             else:
                 ejemplo = f"Usa símbolos de {{{simbolos}}}; el resultado depende de las reglas δ que definiste."
         elif self.nivel == 2:
             a, b = self.apilar_var.get().strip() or "a", self.desapilar_var.get().strip() or "b"
-            n = min(int(self.n_var.get()), 6) if self.n_var.get().isdigit() else 2
+            n = min(6, max(1, int(self.n_var.get()))) if self.n_var.get().isdigit() else 2
             ejemplo = (f"Ejemplo rápido: n={n} genera {a*n+b*n}; la pila guarda {n} marcas."
                        if len(a) == len(b) == 1 else "Ejemplo: escribe a y b; n=2 generará aabb.")
         elif self.nivel == 1:
             a, b, c = (v.get().strip() for v in (self.bloque_a_var, self.bloque_b_var, self.bloque_c_var))
-            n = min(int(self.n_var.get()), 5) if self.n_var.get().isdigit() else 2
+            n = min(5, max(1, int(self.n_var.get()))) if self.n_var.get().isdigit() else 2
             muestra = a + b*n + c*(2*n) if self.patron_n1_var.get() == "a bⁿ c²ⁿ" else a*n+b*n+c*n
             ejemplo = (f"Ejemplo rápido: n={n} genera {muestra}; cada ronda marca los símbolos correspondientes."
                        if all(len(s) == 1 for s in (a, b, c)) else
                        "Ejemplo: escribe a, b y c como símbolos sueltos; n genera las repeticiones.")
         elif self._modo_actual() == "suma":
-            ejemplo = "Ejemplo rápido: 111+11 → 11111 (3 + 2 = 5 en unario)."
+            cantidades = self._repeticiones_suma()
+            if cantidades is None:
+                ejemplo = "Elige n y m positivos para generar un ejemplo de suma unaria."
+            else:
+                n, m = cantidades
+                ejemplo = (f"Ejemplo rápido: {'1' * n}+{'1' * m} → {'1' * (n+m)} "
+                           f"({n}+{m}={n+m} en unario).")
         else:
-            a, b = (self._simbolos_configurados() + ["0", "1"])[:2]
-            ejemplo = f"Ejemplo rápido: {a+b+a} → se lee igual al derecho y al revés."
+            simbolos = self._simbolos_configurados()
+            if (len(simbolos) == 2 and all(len(s) == 1 for s in simbolos)
+                    and len(set(simbolos)) == 2
+                    and not any(s in ("X", "Y", "□") for s in simbolos)):
+                a, b = simbolos
+                ejemplo = f"Ejemplo rápido: {a+b+a} se acepta; {a+b} se rechaza porque sus extremos no coinciden."
+            else:
+                ejemplo = "Configura dos símbolos distintos para ver ejemplos de palíndromos."
         self.ejemplo_rapido.configure(text=ejemplo)
+        if self.nivel == 3 and hasattr(self, "guia_ejercicio"):
+            self.guia_ejercicio.configure(text=self._explicar_ejercicio_nivel3())
+        elif self.nivel == 2 and hasattr(self, "guia_ejercicio"):
+            self.guia_ejercicio.configure(text=self._explicar_ejercicio_nivel2())
+        elif self.nivel == 1 and hasattr(self, "guia_ejercicio"):
+            self.guia_ejercicio.configure(text=self._explicar_ejercicio_nivel1())
+        elif self.nivel == 0 and hasattr(self, "guia_ejercicio"):
+            self.guia_ejercicio.configure(text=self._explicar_ejercicio_nivel0())
+
+    def _explicar_ejercicio_nivel3(self):
+        """Traduce la plantilla o las reglas actuales a instrucciones concretas."""
+        if self.plantilla_var.get() == "Definir mi AFN-ε":
+            maquina = self.custom_maquina
+            acepta, rechaza = self._buscar_ejemplos_afn()
+            partes = [
+                "GUÍA DEL EJERCICIO · Autómata definido por ti. Este modo sirve para dibujar el AFN que describa tu problema.",
+                f"1) Define Q={nivel3.etiqueta(maquina['estados'])}, Σ={nivel3.etiqueta(maquina['alfabeto'])}, "
+                f"q₀={maquina['inicial']} y F={nivel3.etiqueta(maquina['finales'])}.",
+                "2) En el editor escribe δ como una regla por línea: origen,símbolo -> destino(s). Usa ε si la máquina cambia de estado sin consumir entrada.",
+                "3) Al aplicar las reglas, el diagrama se genera desde todos los estados y transiciones. Una transición no definida no tiene destinos.",
+            ]
+            ejemplos = []
+            if acepta is not None:
+                ejemplos.append("acepta " + ("ε (vacía)" if acepta == "" else f"«{acepta}»"))
+            if rechaza is not None:
+                ejemplos.append("rechaza " + ("ε (vacía)" if rechaza == "" else f"«{rechaza}»"))
+            if ejemplos:
+                partes.append("Pruebas mínimas calculadas a partir de tus reglas: " + "; ".join(ejemplos) + ".")
+            else:
+                partes.append("No se encontró una cadena de contraste en los subconjuntos alcanzables; revisa Q, F y δ.")
+            return "\n".join(partes)
+
+        simbolos = self._simbolos_configurados()
+        if self.plantilla_var.get() == "Contiene dos iguales seguidos":
+            if len(simbolos) == 2:
+                a, b = simbolos
+                aceptada, rechazada = a + b + b + a, a + b + a + b
+                formula = f"L = {{{a},{b}}}*({a}{a} ∪ {b}{b}){{{a},{b}}}*"
+                detalle = (f"«{aceptada}» se acepta porque aparece «{b}{b}» en medio. "
+                           f"«{rechazada}» se rechaza porque no tiene dos símbolos iguales consecutivos.")
+            else:
+                formula = "Configura exactamente dos símbolos distintos, de un carácter cada uno."
+                detalle = ""
+            objetivo = f"Objetivo: encontrar «{simbolos[0]*2}» o «{simbolos[1]*2}» en cualquier posición." if len(simbolos) == 2 else ""
+            return ("GUÍA DEL EJERCICIO · El autómata puede elegir una rama para buscar una pareja.\n"
+                    f"1) Paso 1: confirma los dos símbolos del alfabeto.\n"
+                    f"2) Paso 2: la cadena se acepta si contiene una pareja igual consecutiva. {objetivo}\n"
+                    f"3) Paso 3: escribe o carga una prueba y sigue los estados activos en la traza. {detalle}\n"
+                    f"Ejercicio equivalente: {formula}.")
+
+        final = self.final_var.get().strip()
+        if len(final) == 1 and final in simbolos:
+            otros = [simbolo for simbolo in simbolos if simbolo != final]
+            aceptada = (otros[0] + final) if otros else final * 2
+            rechazada = otros[0] if otros else "ε (vacía)"
+            objetivo = f"L = Σ*{final}: cualquier prefijo del alfabeto está permitido, pero el último símbolo debe ser «{final}»."
+            detalle = (f"Con Σ={nivel3.etiqueta(simbolos)}, «{aceptada}» se acepta y «{rechazada}» se rechaza."
+                       if otros else f"Con Σ={nivel3.etiqueta(simbolos)}, «{aceptada}» se acepta y «ε» se rechaza.")
+        else:
+            objetivo = "El símbolo final debe ser un carácter que pertenezca al alfabeto configurado."
+            detalle = "Corrige el alfabeto o el campo Final antes de simular."
+        return ("GUÍA DEL EJERCICIO · Lenguaje de cadenas que terminan en un símbolo.\n"
+                "1) Paso 1: elige «Termina en símbolo».\n"
+                f"2) Paso 2: configura Σ y el símbolo final. {objetivo}\n"
+                f"3) Paso 3: escribe una cadena con símbolos de Σ; mira qué camino queda activo al terminar. {detalle}\n"
+                "Un carácter no incluido en Σ produce rechazo y se marca su posición.")
+
+    def _explicar_ejercicio_nivel2(self):
+        """Explica cómo interpretar el contador n y los cambios de la pila LIFO."""
+        if self._es_formal():
+            maquina = self.formal_maquinas[2]
+            if not self.formal_editada[2]:
+                return (
+                    "GUÍA DEL EJERCICIO · Autómata de pila definido por transiciones.\n"
+                    f"1) Define Q={nivel3.etiqueta(maquina['estados'])}, Σ={nivel3.etiqueta(maquina['alfabeto'])}, "
+                    f"Γ={nivel3.etiqueta(maquina['pila_alfabeto'])}, q₀={maquina['inicial']}, "
+                    f"F={nivel3.etiqueta(maquina['finales'])} y fondo={maquina['fondo']}.\n"
+                    "2) En una regla q,lee,tope -> siguiente,reemplazo, ε en lee no consume entrada; ε en reemplazo retira el tope.\n"
+                    "3) Con las reglas iniciales, aabb se acepta: se apilan dos A, luego se retiran y se llega a qf. "
+                    "aab se rechaza porque queda una A. Se acepta al consumir toda la entrada y llegar a un estado final."
+                )
+            return (
+                "GUÍA DEL EJERCICIO · Autómata de pila propio.\n"
+                f"1) La máquina actual tiene Q={nivel3.etiqueta(maquina['estados'])}, "
+                f"Σ={nivel3.etiqueta(maquina['alfabeto'])}, Γ={nivel3.etiqueta(maquina['pila_alfabeto'])}, "
+                f"q₀={maquina['inicial']}, F={nivel3.etiqueta(maquina['finales'])}.\n"
+                "2) Revisa las reglas del editor: q,lee,tope -> siguiente,reemplazo. El reemplazo se escribe de la base al nuevo tope.\n"
+                "3) Escribe una cadena usando Σ y reproduce la traza. Se acepta solo si consume toda la entrada y termina en F. "
+                "Los ejemplos automáticos se ocultan al cambiar las reglas para no mostrar resultados desactualizados."
+            )
+
+        a = self.apilar_var.get().strip()
+        b = self.desapilar_var.get().strip()
+        try:
+            n = int(self.n_var.get())
+        except ValueError:
+            n = 2
+        if len(a) != 1 or len(b) != 1 or a == b:
+            return (
+                "GUÍA DEL EJERCICIO · Lenguaje xⁿyⁿ.\n"
+                "1) Escribe un símbolo distinto en cada campo; cada símbolo debe tener un carácter.\n"
+                "2) Elige n entre 1 y 6. n es una cantidad: el botón Generar cadena crea x repetido n veces seguido de y repetido n veces.\n"
+                "3) La pila comienza en ⊥; la primera parte agrega una A por símbolo y la segunda retira una."
+            )
+        n = min(6, max(1, n))
+        cadena = a*n + b*n
+        return (
+            f"GUÍA DEL EJERCICIO · Se reconoce L = {{{a}ⁿ{b}ⁿ | n ≥ 1}}.\n"
+            f"1) Paso 1: elige «xⁿ yⁿ (guiado)».\n"
+            f"2) Paso 2: x={a} apila una A; y={b} retira una A. n={n} genera «{cadena}». n cuenta repeticiones, no se escribe en la entrada.\n"
+            f"3) Paso 3: en «{cadena}», la pila cambia ⊥ → ⊥A → ⊥AA → ⊥A → ⊥. Se acepta si hay la misma cantidad, primero todas las {a} y después todas las {b}.\n"
+            f"Contrastes: «{a*2}{b}» se rechaza porque sobra una A; «{a}{b}{a}{b}» se rechaza porque {a} aparece después de empezar el bloque {b}. La cadena vacía también se rechaza."
+        )
+
+    def _explicar_ejercicio_nivel1(self):
+        """Explica el LBA, el significado de n y cómo leer sus delimitadores."""
+        if self._es_formal():
+            maquina = self.formal_maquinas[1]
+            definicion = (
+                f"Q={nivel3.etiqueta(maquina['estados'])}, "
+                f"Σ={nivel3.etiqueta(maquina['alfabeto'])}, "
+                f"Γ={nivel3.etiqueta(maquina['alfabeto_cinta'])}, "
+                f"q₀={maquina['inicial']} y F={nivel3.etiqueta(maquina['finales'])}"
+            )
+            if not self.formal_editada[1]:
+                return (
+                    "GUÍA DEL EJERCICIO · LBA definido por reglas.\n"
+                    f"1) La máquina de muestra usa {definicion}. La cinta comienza como ⊢ab⊣.\n"
+                    "2) Abre «Editar reglas del LBA». Cada línea tiene el formato estado,lee -> siguiente,escribe,mueve; "
+                    "L va a la izquierda, R a la derecha y S deja la cabeza quieta.\n"
+                    "3) Con las reglas iniciales, «ab» llega a qf y se acepta; «a» y «ba» se rechazan. "
+                    "Los delimitadores ⊢ y ⊣ no se pueden cruzar, borrar ni crear."
+                )
+            return (
+                "GUÍA DEL EJERCICIO · LBA definido por ti.\n"
+                f"1) La definición actual tiene {definicion}.\n"
+                "2) Revisa que cada transición respete la cinta acotada: el cabezal se mueve dentro de la entrada "
+                "y no cambia los delimitadores.\n"
+                "3) Introduce una cadena de Σ y sigue la traza. Se acepta solo si alguna ruta alcanza un estado final; "
+                "al editar reglas, los ejemplos automáticos se ocultan para evitar resultados desactualizados."
+            )
+
+        a, b, c = (v.get().strip() for v in (self.bloque_a_var, self.bloque_b_var, self.bloque_c_var))
+        if (any(len(s) != 1 for s in (a, b, c)) or len({a, b, c}) != 3
+                or any(s in nivel1.MARCAS + nivel1.DELIMITADORES for s in (a, b, c))):
+            return (
+                "GUÍA DEL EJERCICIO · Cinta linealmente acotada.\n"
+                "1) Elige un patrón del menú.\n"
+                "2) Configura tres símbolos distintos de un carácter. X, Y, Z, ⊢ y ⊣ están reservados para las marcas y límites.\n"
+                "3) Escribe una cadena o genera una con n; simula para ver cada movimiento del cabezal."
+            )
+
+        try:
+            n = int(self.n_var.get())
+        except ValueError:
+            n = 2
+        n = min(5, max(1, n))
+        if self.patron_n1_var.get() == "a bⁿ c²ⁿ":
+            cadena = a + b*n + c*(2*n)
+            return (
+                f"GUÍA DEL EJERCICIO · Se reconoce L = {{{a}·{b}ⁿ·{c}²ⁿ | n ≥ 1}}.\n"
+                "1) Paso 1: elige «a bⁿ c²ⁿ». En este patrón, el primer símbolo aparece una sola vez.\n"
+                f"2) Paso 2: n={n} genera «{cadena}»: una {a}, {n} símbolos {b} y {2*n} símbolos {c}. "
+                "n es una cantidad, no se escribe en la cadena.\n"
+                f"3) Paso 3: en «{cadena}», X marca la {a}, Y cada {b} y Z dos {c} por ronda. "
+                f"El cabezal permanece entre ⊢ y ⊣. Por ejemplo, «{a}{b}{b}{c*3}» se rechaza porque falta una c.\n"
+                "Nota teórica: este patrón también es libre de contexto; xⁿyⁿzⁿ es el ejemplo característico de este nivel."
+            )
+
+        cadena = a*n + b*n + c*n
+        return (
+            f"GUÍA DEL EJERCICIO · Se reconoce L = {{{a}ⁿ{b}ⁿ{c}ⁿ | n ≥ 1}}.\n"
+            "1) Paso 1: elige «aⁿ bⁿ cⁿ». Los bloques deben aparecer en ese orden y no pueden estar vacíos.\n"
+            f"2) Paso 2: n={n} genera «{cadena}»: {n} símbolos {a}, {n} {b} y {n} {c}. "
+            "n cuenta las repeticiones; no forma parte de la entrada.\n"
+            f"3) Paso 3: en «{cadena}», cada ronda marca una {a} como X, una {b} como Y y una {c} como Z, "
+            "y regresa al inicio. Acepta cuando todos quedan emparejados.\n"
+            f"Contrastes: «{a*2}{b}{c*2}» se rechaza por cantidades distintas; «{a}{c}{b}» se rechaza por orden. "
+            "La cinta empieza y termina en ⊢ y ⊣, que el cabezal nunca cruza."
+        )
+
+    def _explicar_ejercicio_nivel0(self):
+        """Da instrucciones concretas para cada tarea de la máquina de Turing."""
+        if self._es_formal():
+            maquina = self.formal_maquinas[0]
+            if not self.formal_editada[0]:
+                return (
+                    "GUÍA DEL EJERCICIO · MT de muestra, definida por δ.\n"
+                    f"1) Usa Q={nivel3.etiqueta(maquina['estados'])}, "
+                    f"Σ={nivel3.etiqueta(maquina['alfabeto'])}, "
+                    f"Γ={nivel3.etiqueta(maquina['alfabeto_cinta'])}, q₀={maquina['inicial']} y "
+                    f"F={nivel3.etiqueta(maquina['finales'])}. Σ contiene símbolos permitidos en la entrada; Γ incluye además □.\n"
+                    "2) La regla q0,1 -> q0,1,R avanza sobre cada 1. Al leer □, "
+                    "q0,□ -> qf,1,S escribe un 1 adicional y entra al estado final.\n"
+                    "3) Escribe 111 y simula: la cinta queda 1111 y la MT acepta. "
+                    "La cadena 0 se rechaza porque 0 no pertenece a Σ. Reproduce la traza para ver leer, escribir y mover."
+                )
+            return (
+                "GUÍA DEL EJERCICIO · MT definida por ti.\n"
+                f"1) La máquina tiene Q={nivel3.etiqueta(maquina['estados'])}, "
+                f"Σ={nivel3.etiqueta(maquina['alfabeto'])}, "
+                f"Γ={nivel3.etiqueta(maquina['alfabeto_cinta'])}, q₀={maquina['inicial']} y "
+                f"F={nivel3.etiqueta(maquina['finales'])}. La entrada solo puede usar símbolos de Σ.\n"
+                "2) En «Editar reglas del MT», escribe estado,lee -> siguiente,escribe,mueve. "
+                "L va a la izquierda, R a la derecha y S no mueve; □ representa una celda vacía. "
+                "Una regla ausente detiene esa ruta.\n"
+                "3) Simula y observa la cinta en cada configuración. Se acepta si una ruta llega a F; "
+                "se rechaza si todas terminan sin llegar a F. Si una ruta hace un ciclo o se alcanza el límite de simulación, "
+                "el resultado es no evaluado. Las sugerencias fijas se ocultan al cambiar δ."
+            )
+
+        if self._modo_actual() == "suma":
+            cantidades = self._repeticiones_suma()
+            if cantidades is None:
+                return (
+                    "GUÍA DEL EJERCICIO · Suma con números unarios.\n"
+                    "1) Elige «Suma unaria».\n"
+                    "2) Define n y m como cantidades positivas; cada cantidad genera ese número de símbolos 1. "
+                    "La entrada, incluido +, debe ocupar hasta 28 caracteres.\n"
+                    "3) Pulsa «Generar entrada» o escribe dos bloques de unos separados por +, sin espacios."
+                )
+            n, m = cantidades
+            entrada = "1" * n + "+" + "1" * m
+            salida = "1" * (n + m)
+            return (
+                "GUÍA DEL EJERCICIO · Suma con números unarios.\n"
+                "1) Elige «Suma unaria». En esta notación, n se representa escribiendo n símbolos 1; "
+                "por ejemplo, 111 representa tres, no el número decimal mil ciento once.\n"
+                f"2) n={n} y m={m}; pulsa «Generar entrada» para obtener «{entrada}». "
+                "Cada 1 vale una unidad y + separa los sumandos. También puedes escribir dos bloques no vacíos sin espacios.\n"
+                f"3) Al simular, la MT recorre la cinta, borra + y deja «{salida}». "
+                f"El resultado tiene {n+m} unos, porque {n}+{m}={n+m}. Se permiten entradas de hasta 28 caracteres."
+            )
+
+        simbolos = self._simbolos_configurados()
+        validos = (len(simbolos) == 2 and all(len(s) == 1 for s in simbolos)
+                   and len(set(simbolos)) == 2
+                   and not any(s in ("X", "Y", "□") for s in simbolos))
+        if not validos:
+            return (
+                "GUÍA DEL EJERCICIO · Palíndromo en una cinta extendible.\n"
+                "1) Elige «Palíndromo».\n"
+                "2) Configura exactamente dos símbolos diferentes, de un carácter cada uno; por ejemplo 0,1 o a,b. "
+                "X, Y y □ están reservados para marcas y blancos.\n"
+                "3) Escribe una cadena formada solo por esos símbolos y simula. La interfaz mostrará una pareja de prueba "
+                "cuando la configuración sea válida. La cadena vacía también es un palíndromo."
+            )
+
+        a, b = simbolos
+        acepta, rechaza = a + b + a, a + b
+        return (
+            f"GUÍA DEL EJERCICIO · Se comprueba si la cadena es igual al leerla en ambos sentidos. Σ={{{a},{b}}}.\n"
+            "1) La máquina toma el símbolo sin marcar más a la izquierda y lo recuerda mediante X o Y.\n"
+            "2) El cabezal va al otro extremo sin cruzar la cinta, ignora marcas previas y compara los símbolos. "
+            "Si coinciden, marca la pareja y vuelve a empezar; si no, rechaza.\n"
+            f"3) «{acepta}» se acepta y «{rechaza}» se rechaza. Cuando no queda otra pareja, acepta; "
+            "por eso también acepta una cadena vacía o un símbolo central. La entrada admite hasta 24 caracteres."
+        )
 
     def _simular(self):
         """Pide la traza al modelo y prepara una fila por configuración."""
@@ -912,7 +1604,8 @@ class Simulador(ttk.Frame):
                 estado, accion = paso.get("estado", ""), paso.get("accion", "")
             else:
                 lee, estado, accion = paso.get("simbolo", ""), paso.get("estado", ""), paso.get("accion", "")
-            self.tabla.insert("", "end", iid=str(numero), values=(numero, lee, estado, accion))
+            numero_visible = numero + 1
+            self.tabla.insert("", "end", iid=str(numero), values=(numero_visible, lee, estado, accion))
 
         estado = ("— NO EVALUADA" if resultado.get("aceptada") is None else
                   "✓ ACEPTADA" if resultado["aceptada"] else "✕ RECHAZADA")
@@ -1214,9 +1907,12 @@ class Simulador(ttk.Frame):
         activos = frozenset(paso.get("activos", ()))
         aristas_activas = set(paso.get("aristas", ()))
         estados = maquina["estados"]
-        filas = (len(estados) + 3) // 4
-        tabla_y = 170 + filas * 120
-        ancho = max(610, 190 + 125 * len(maquina["alfabeto"]))
+        # El grafo se acomoda en una elipse amplia para separar los nodos y
+        # reducir cruces, incluso cuando el usuario define estados propios.
+        ancho = max(700, 190 + 125 * len(maquina["alfabeto"]))
+        alto_grafo = max(250, 120 + min(len(estados), 10) * 18)
+        inicio_grafo = 88
+        tabla_y = inicio_grafo + alto_grafo + 34
         alto = tabla_y + 84 + 29 * len(afd["estados"])
         self._pintar_grilla(c, ancho, alto)
         c.create_text(18, 20, text="AFN-ε · definición formal", anchor="w", fill=TEXTO,
@@ -1225,8 +1921,24 @@ class Simulador(ttk.Frame):
                       text=f"Q = {nivel3.etiqueta(estados)}    Σ = {nivel3.etiqueta(maquina['alfabeto'])}    "
                            f"q₀ = {maquina['inicial']}    F = {nivel3.etiqueta(maquina['finales'])}",
                       anchor="w", fill=TEXTO_SUAVE, font=("Consolas", 8))
-        posiciones = {estado: (76 + (indice % 4) * 140, 150 + (indice // 4) * 140)
-                      for indice, estado in enumerate(estados)}
+        centro_x = ancho / 2
+        centro_y = inicio_grafo + alto_grafo / 2
+        cantidad = len(estados)
+        if cantidad == 1:
+            posiciones = {estados[0]: (centro_x, centro_y)}
+        elif cantidad == 2:
+            separacion = min(190, ancho * 0.24)
+            posiciones = {estados[0]: (centro_x - separacion, centro_y),
+                          estados[1]: (centro_x + separacion, centro_y)}
+        else:
+            radio_x = min(ancho * 0.37, max(145, ancho * 0.28))
+            radio_y = min(alto_grafo * 0.37, max(90, alto_grafo * 0.31))
+            posiciones = {
+                estado: (centro_x + radio_x * math.cos(-math.pi / 2 + 2 * math.pi * indice / cantidad),
+                         centro_y + radio_y * math.sin(-math.pi / 2 + 2 * math.pi * indice / cantidad))
+                for indice, estado in enumerate(estados)
+            }
+        ancho_estado = max(64, min(110, 16 + 8 * max(len(estado) for estado in estados)))
         agrupadas = {}
         for (origen, simbolo), destinos in maquina["transiciones"].items():
             for destino in destinos:
@@ -1248,19 +1960,24 @@ class Simulador(ttk.Frame):
             ux, uy = dx/distancia, dy/distancia
             separacion = 15 if (destino, origen) in agrupadas else 0
             px, py = -uy*separacion, ux*separacion
-            inicio = (x1+ux*32+px, y1+uy*28+py)
-            fin = (x2-ux*32+px, y2-uy*28+py)
+            inicio = (x1+ux*(ancho_estado/2+3)+px, y1+uy*29+py)
+            fin = (x2-ux*(ancho_estado/2+3)+px, y2-uy*29+py)
             medio = ((inicio[0]+fin[0])/2+px, (inicio[1]+fin[1])/2+py)
             c.create_line(*inicio, *medio, *fin, smooth=True, arrow=tk.LAST,
                           fill=color, width=2.5 if activa else 1.5)
             c.create_text(medio[0], medio[1]-12, text=etiqueta, fill=color,
                           font=("Consolas", 8, "bold"))
         inicio_x, inicio_y = posiciones[maquina["inicial"]]
-        c.create_line(inicio_x-62, inicio_y, inicio_x-33, inicio_y,
-                      arrow=tk.LAST, fill=TEXTO, width=1.7)
+        dx, dy = inicio_x-centro_x, inicio_y-centro_y
+        distancia = math.hypot(dx, dy)
+        ux, uy = ((dx/distancia, dy/distancia) if distancia else (-1, 0))
+        radio = 1 / math.sqrt((ux/(ancho_estado/2))**2 + (uy/25)**2)
+        desde = (inicio_x+ux*(radio+26), inicio_y+uy*(radio+26))
+        hasta = (inicio_x+ux*(radio+3), inicio_y+uy*(radio+3))
+        c.create_line(*desde, *hasta, arrow=tk.LAST, fill=TEXTO, width=1.7)
         for estado, (x, y) in posiciones.items():
             self._estado(c, x, y, estado, estado in activos,
-                         aceptar=estado in maquina["finales"], ancho=60)
+                         aceptar=estado in maquina["finales"], ancho=ancho_estado)
 
         c.create_text(18, tabla_y-28,
                       text=f"Activos: {nivel3.etiqueta(activos)} · doble círculo = final · resaltado = transición leída",
@@ -1414,7 +2131,7 @@ class Simulador(ttk.Frame):
     def _dibujar_cinta_lba(self, cinta, cabeza, estado):
         c = self.canvas
         self._pintar_grilla(c, 500, 250)
-        c.create_text(14, 17, text="El cabezal puede moverse a izquierda y derecha dentro de la cinta.",
+        c.create_text(14, 17, text=f"LBA · Estado: {estado} · Celda actual: {cabeza}",
                       anchor="w", fill=TEXTO, font=("Segoe UI", 8))
         if not cinta:
             return
@@ -1422,9 +2139,14 @@ class Simulador(ttk.Frame):
         for indice, simbolo in enumerate(cinta):
             x1 = x0 + indice * celda
             activo = indice == cabeza
+            frontera = simbolo in ("⊢", "⊣")
+            marcado = simbolo in nivel1.MARCAS
+            fondo = (SELECCION_ACTIVA if activo else
+                     PANEL_ELEVADO if frontera or marcado else PANEL)
+            borde = (ESTADO_ATENCION if activo else
+                     COLOR_POR_NIVEL[1] if marcado else BORDE)
             c.create_rectangle(x1, y, x1 + celda - 2, y + 42,
-                               fill=SELECCION_ACTIVA if activo else PANEL,
-                               outline=ESTADO_ATENCION if activo else BORDE, width=2 if activo else 1)
+                               fill=fondo, outline=borde, width=2 if activo or marcado else 1)
             c.create_text(x1 + (celda-2)/2, y+21, text=simbolo, fill=TEXTO,
                           font=("Consolas", 10, "bold"))
             c.create_text(x1 + (celda-2)/2, y+56, text=str(indice), fill=TEXTO_SUAVE,
@@ -1475,16 +2197,19 @@ class Simulador(ttk.Frame):
             simbolo = cinta.get(indice, "□")
             x1 = x0 + offset*celda
             activo = indice == cabeza
+            marcado = simbolo in ("X", "Y")
+            relleno = SELECCION_ACTIVA if activo else FONDO_APP if simbolo == "□" else PANEL
+            borde = ESTADO_ATENCION if activo else ACENTO if marcado else BORDE
+            color_simbolo = ESTADO_ATENCION if activo else ACENTO if marcado else TEXTO_SUAVE if simbolo == "□" else TEXTO
             c.create_rectangle(x1, y, x1+celda-2, y+43,
-                               fill=SELECCION_ACTIVA if activo else PANEL,
-                               outline=ESTADO_ATENCION if activo else BORDE, width=2 if activo else 1)
-            c.create_text(x1+(celda-2)/2, y+21, text=simbolo, fill=TEXTO,
+                               fill=relleno, outline=borde, width=2 if activo or marcado else 1)
+            c.create_text(x1+(celda-2)/2, y+21, text=simbolo, fill=color_simbolo,
                           font=("Consolas", 10, "bold"))
             c.create_text(x1+(celda-2)/2, y+57, text=str(indice), fill=TEXTO_SUAVE,
                           font=("Consolas", 7))
         centro = x0 + (cabeza-primer_indice)*celda + (celda-2)/2
         c.create_line(centro, y-20, centro, y-3, fill=ESTADO_ATENCION, width=1.7, arrow=tk.LAST)
-        texto = "La ventana acompaña al cabezal; las celdas □ están vacías."
+        texto = "La ventana sigue al cabezal; □ es una celda vacía que la máquina puede escribir. X e Y muestran marcas del palíndromo."
         c.create_text(14, 184, text=texto, anchor="w", fill=TEXTO_SUAVE, font=("Segoe UI", 8))
         if self._es_formal():
             self._ajustar_canvas(*self._diagrama_formal(estado))

@@ -4,12 +4,21 @@ import tkinter as tk
 from tkinter import ttk
 
 from interfaz.parametrizacion_colores import (
-    ACENTO, ACENTO_HOVER, BORDE, CAMPO, COLOR_POR_NIVEL,
-    COLOR_RUTA_POR_NIVEL, FONDO_APP, PANEL, PANEL_ELEVADO,
-    SELECCION_ACTIVA, TEXTO, TEXTO_ETIQUETA_NIVEL, TEXTO_SUAVE,
+    ACENTO,
+    ACENTO_HOVER,
+    BORDE,
+    CAMPO,
+    COLOR_POR_NIVEL,
+    COLOR_RUTA_POR_NIVEL,
+    FONDO_APP,
+    PANEL,
+    PANEL_ELEVADO,
+    SELECCION_ACTIVA,
+    TEXTO,
+    TEXTO_ETIQUETA_NIVEL,
+    TEXTO_SUAVE,
 )
 from interfaz.simulador import Simulador
-
 
 # Cada tarjeta explica el tipo de memoria y enseña una mini máquina dibujada
 # con Canvas. El gráfico anticipa lo que se verá al abrir cada simulador.
@@ -70,7 +79,7 @@ class Aplicacion:
         self.botones_nav = {}
         self.miniaturas = {}
         self.ventana.bind("<Configure>", self._redimensionar_portada, add="+")
-        self.mostrar_inicio()
+        self.mostrar_simuladores()
 
     def _configurar_estilos(self):
         """Define los estilos ttk para que coincidan con la paleta central."""
@@ -127,8 +136,8 @@ class Aplicacion:
         self.botones_nav = {}
         self.miniaturas = {}
 
-    def mostrar_inicio(self):
-        """Construye la portada con navegación lateral y módulos visuales."""
+    def mostrar_simuladores(self):
+        """Construye la vista principal con la selección de simuladores."""
         self._limpiar()
         self.contenido = tk.Frame(self.ventana, bg=FONDO_APP)
         self.contenido.pack(fill="both", expand=True)
@@ -157,7 +166,7 @@ class Aplicacion:
             ventana_canvas, width=evento.width))
         self._construir_contenido_inicio()
         self._habilitar_rueda(self.page)
-        self._marcar_navegacion("Inicio")
+        self._marcar_navegacion("Simuladores")
         self.ventana.after_idle(self._redimensionar_portada)
 
     def _construir_barra_lateral(self, barra):
@@ -180,7 +189,6 @@ class Aplicacion:
         tk.Label(barra, text="Laboratorio", bg=PANEL, fg=TEXTO_SUAVE,
                  font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=21, pady=(0, 7))
         opciones = [
-            ("Inicio", "⌂", self.mostrar_inicio),
             ("Simuladores", "◉", self._ir_a_simuladores),
             ("Teoría", "∑", self._mostrar_teoria),
             ("Ejercicios", "✓", self._mostrar_ejercicios),
@@ -765,7 +773,7 @@ class Aplicacion:
     def mostrar_nivel(self, nivel):
         """Abre el simulador seleccionado y conserva el botón para volver."""
         self._limpiar()
-        self.contenido = Simulador(self.ventana, nivel, self.mostrar_inicio)
+        self.contenido = Simulador(self.ventana, nivel, self.mostrar_simuladores, self.mostrar_nivel)
         self.contenido.pack(fill="both", expand=True)
 
     def ejecutar(self):

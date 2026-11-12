@@ -9,7 +9,7 @@ La aplicación ilustra cómo aumenta la capacidad de cómputo al pasar por los c
 - `main.py` inicia la aplicación.
 - `interfaz/menu.py` expone el punto de entrada del menú.
 - `interfaz/pantalla_inicio.py` construye la portada, la navegación, la teoría, los ejercicios y las miniaturas de los cuatro modelos.
-- `interfaz/simulador.py` contiene la interfaz común: entrada, ejemplos, controles de reproducción, tabla de pasos y dibujo de la máquina.
+- `interfaz/simulador.py` contiene la interfaz común: entrada, ejemplos, controles de reproducción, tabla de pasos y dibujo de la máquina. Los cuatro niveles incluyen barra lateral, disposición adaptable y una guía de tres pasos; los niveles 3 y 0 incluyen editores propios para AFN y MT.
 - `interfaz/parametrizacion_colores.py` concentra la paleta y asigna nombres claros a los colores de fondo, panel, campos, texto, bordes, selección y resultados.
 - `modelos/formales.py` interpreta las reglas editables de AP, LBA y MT sin depender de Tkinter.
 - `modelos/nivel3.py` simula AFN con transiciones ε y construye el AFD equivalente por subconjuntos.
@@ -37,7 +37,9 @@ El AFN tiene dos estados: `q0` inicial y `q1` final. `q0` tiene un bucle sobre t
 
 La segunda plantilla reproduce la bifurcación de la referencia: `q0` llega por ε a `r1` y `t1`. La rama `r` detecta dos apariciones consecutivas del segundo símbolo (`11` con `0,1`); la rama `t`, dos del primero (`00`). `r3` y `t3` son finales y conservan la aceptación mientras leen más símbolos. Por tanto, con `0,1` reconoce las cadenas que contienen `00` o `11`.
 
-El tercer modo permite definir un AFN-ε propio mediante `Q`, `Σ`, `q₀`, `F` y reglas `origen,símbolo -> destinos`. `crear_desde_reglas` valida unicidad, pertenencia de estados y símbolos, y formato de cada transición. La ausencia de una regla significa que la función de transición devuelve `∅`; `ε` solo aparece como etiqueta de transición, no como símbolo de entrada. El grafo y la tabla AFD se dibujan a partir de esta definición. El límite de 8 estados, 6 símbolos y 256 subconjuntos protege la interfaz de un crecimiento exponencial de la construcción de subconjuntos.
+El tercer modo permite definir un AFN o AFN-ε propio mediante `Q`, `Σ`, `q₀`, `F` y reglas `origen,símbolo -> destinos`. El ejemplo inicial reconoce las cadenas que contienen `01`. `crear_desde_reglas` valida unicidad, pertenencia de estados y símbolos, y formato de cada transición. La ausencia de una regla significa que la función de transición devuelve `∅`; `ε` solo aparece como etiqueta de transición, no como símbolo de entrada. El diagrama completo se genera con todos los estados y reglas introducidos, incluyendo flecha inicial, bucles y estados finales; se distribuye en una elipse para facilitar la lectura. La misma definición alimenta la tabla AFD y la búsqueda de ejemplos de aceptación/rechazo más cortos. El límite de 8 estados, 6 símbolos y 256 subconjuntos protege la interfaz de un crecimiento exponencial de la construcción de subconjuntos.
+
+En la pantalla, el estudiante sigue tres etapas: seleccionar una plantilla o el modo propio; ajustar el alfabeto y el símbolo final, o declarar `Q`, `q₀`, `F` y `δ`; escribir o cargar una cadena y leer la animación. Los números de las filas de traza empiezan en 1 para coincidir con el indicador `Paso n de m`. La barra lateral permite volver a **Simuladores** o abrir otro nivel. El sistema no deduce una máquina única de un enunciado informal: el usuario expresa la definición formal y la interfaz construye sus visualizaciones a partir de ella.
 
 El motor realiza la conversión completa: parte de `clausuraε({q0})`; para cada subconjunto `S` y símbolo `a`, calcula `mover(S,a)` como la unión de los destinos y luego `clausuraε(mover(S,a))`. Explora los subconjuntos nuevos con una cola hasta que no queden pendientes. `∅` aparece si ninguna rama continúa. Un subconjunto del AFD es final si contiene al menos un estado final del AFN. La animación muestra cada lectura y el gráfico resalta los estados activos; la tabla presenta todas las transiciones alcanzables. La traza admite hasta 500 símbolos.
 
@@ -49,6 +51,8 @@ La pila usa disciplina LIFO (último en entrar, primero en salir); en este lengu
 
 La interfaz admite hasta 12 símbolos y seis marcas apiladas para conservar la pila dentro del área visible.
 El control `n` genera `xⁿyⁿ` con `1 ≤ n ≤ 6`; los campos de símbolos siguen recibiendo un solo carácter.
+
+La pantalla presenta el uso como una secuencia: elegir el AP guiado o el editable; configurar los dos símbolos y `n`; introducir la palabra y seguir la pila en la traza. `n` es un contador para generar la palabra, no un símbolo de entrada. Por ejemplo, con `x=a`, `y=b`, `n=2`, la palabra es `aabb` y la pila evoluciona `⊥ → ⊥A → ⊥AA → ⊥A → ⊥`. El sidebar permite abrir otros niveles y, en una ventana estrecha, el diagrama y la tabla se apilan verticalmente.
 
 El modo **Definir mi AP** ejecuta un autómata de pila no determinista especificado por el usuario. Cada regla tiene la forma `estado,entrada,tope -> siguiente,reemplazo`; `ε` en entrada no consume símbolo y `ε` en reemplazo retira el tope. La cadena de reemplazo se escribe desde la base hacia el nuevo tope. El marcador de fondo se conserva. La búsqueda por anchura encuentra una ruta aceptante si existe; sin ruta aceptante, un espacio de configuraciones finito permite rechazar exhaustivamente. El tope de búsqueda (5.000 configuraciones, 64 símbolos de pila por configuración y 1.000 transiciones por ruta) produce un resultado inconcluso, nunca rechazo.
 
@@ -66,24 +70,30 @@ El control `n` genera `xⁿyⁿzⁿ` con `1 ≤ n ≤ 5` y respeta el límite de
 
 La opción adicional reconoce `{x yⁿ z²ⁿ | n ≥ 1}`. Solo aparece una `x`; por cada `y` la máquina marca **dos** `z`. Rechaza si falta una de las dos `z` o si quedan `z` al agotar las `y`. Con `x=a`, `y=b`, `z=c`, `n=2` genera `abbcccc`. Esta opción también es libre de contexto, pero el módulo mantiene como ejemplo principal `xⁿyⁿzⁿ`, que requiere capacidad sensible al contexto.
 
-El modo **Definir mi LBA** usa reglas `estado,lee -> siguiente,escribe,mueve` y una cinta con extremos fijos `⊢` y `⊣`. La máquina puede ser no determinista (varias reglas para una misma combinación). La búsqueda por anchura acepta si alguna ruta alcanza un estado final. Como hay un número finito de configuraciones para cada entrada, la exploración exhaustiva terminaría en principio; el límite de 5.000 configuraciones o 1.000 transiciones por ruta devuelve **no evaluada** en lugar de simular un rechazo.
+El modo **Definir mi LBA** usa reglas `estado,lee -> siguiente,escribe,mueve` y una cinta con extremos fijos `⊢` y `⊣`. `L` mueve a la izquierda, `R` a la derecha y `S` mantiene la cabeza en la celda actual. El editor impide borrar o cruzar delimitadores y crear fronteras nuevas. La máquina puede ser no determinista (varias reglas para una misma combinación). La búsqueda por anchura acepta si alguna ruta alcanza un estado final. Como hay un número finito de configuraciones para cada entrada, la exploración exhaustiva terminaría en principio; el límite de 5.000 configuraciones o 1.000 transiciones por ruta devuelve **no evaluada** en lugar de simular un rechazo.
+
+La pantalla de este nivel mantiene el sidebar de **Simuladores** y presenta tres pasos. En los patrones guiados, `n` genera la entrada y no es un símbolo adicional. El modo `xⁿyⁿzⁿ` acepta `aabbcc` para `n=2`; en cada ronda marca una letra de cada bloque como `X`, `Y` y `Z`. El modo `x·yⁿ·z²ⁿ` acepta `abbcccc`, con una `a`, dos `b` y cuatro `c`; esta segunda práctica también es libre de contexto. Las sugerencias de aceptación y rechazo dependen del patrón y de los símbolos configurados. El modo formal de muestra acepta `ab`; al editar sus reglas se ocultan las sugerencias fijas.
 
 ### Nivel 0: Máquina de Turing
 
 La cinta es un diccionario de posiciones enteras. Una posición sin valor almacena el blanco `□`; el cabezal puede moverse a posiciones negativas o más allá del extremo derecho de la entrada. Cada paso guarda una copia de la cinta, el estado, el símbolo leído y la acción para que el usuario pueda inspeccionar la lectura, escritura y movimiento.
 
-El modo **palíndromo** permite configurar dos símbolos distintos de un carácter. Marca con `X` y `Y` los dos símbolos ya comparados. En cada ciclo marca el símbolo sin procesar más a la izquierda, busca el extremo derecho y compara el último símbolo sin marcar. Rechaza ante una diferencia y acepta cuando no quedan parejas. La entrada vacía se acepta como palíndromo. `X`, `Y` y `□` están reservados para las marcas y el blanco.
+La pantalla del Nivel 0 contiene una guía de tres pasos que cambia según la opción seleccionada. El selector ofrece **Palíndromo**, **Suma unaria** y **Definir mi MT**; la cadena se puede escribir directamente o cargar desde los ejemplos opcionales. Tras simular, la reproducción permite avanzar y retroceder por la traza completa. La cinta dibujada centra la ventana en el cabezal, resalta la celda activa y las marcas `X`/`Y`, y muestra el estado y el alfabeto de cinta.
 
-El modo **suma unaria** recibe dos bloques positivos con formato `1ⁿ+1ᵐ`, con `n,m ≥ 1` (sin espacios; por ejemplo, `111+11`). La máquina recorre hasta el blanco final, borra el último `1` del segundo sumando y reemplaza `+` por `1`. El resultado es un solo bloque de unos cuya longitud es la suma. La entrada de este modo se limita a 28 caracteres.
+El modo **palíndromo** permite configurar dos símbolos distintos de un carácter. Marca con `X` y `Y` los dos símbolos ya comparados. En cada ciclo marca el símbolo sin procesar más a la izquierda, busca el extremo derecho y compara el último símbolo sin marcar. Rechaza ante una diferencia y acepta cuando no quedan parejas. La entrada vacía se acepta como palíndromo. `X`, `Y` y `□` están reservados para las marcas y el blanco. La guía explica la comparación y actualiza ejemplos como `010`/`01` o `aba`/`ab` según el alfabeto configurado.
 
-El modo **Definir mi MT** ejecuta transiciones de lectura, escritura y movimiento de forma no determinista. Se exploran las configuraciones por anchura; una ruta que llega a un estado final acepta. Si las rutas se agotan sin aceptación y sin ciclos, se rechaza; si se repite una configuración o se alcanza el presupuesto (5.000 configuraciones o 1.000 transiciones por ruta), el resultado es inconcluso. Un límite de simulación no demuestra que la máquina real rechace ni que vaya a terminar.
+El modo **suma unaria** recibe dos bloques positivos con formato `1ⁿ+1ᵐ`, con `n,m ≥ 1` (sin espacios; por ejemplo, `111+11`). Aquí `n` es una cantidad de repeticiones: `111` representa tres, no el número decimal 111. La interfaz ofrece controles `n` y `m` para generar la entrada, que sigue editable, o permite escribirla directamente. La máquina recorre hasta el blanco final, borra el último `1` del segundo sumando y reemplaza `+` por `1`. El resultado es un solo bloque de unos cuya longitud es la suma. La traza muestra la operación; la entrada se limita a 28 caracteres.
+
+El modo **Definir mi MT** permite editar estados, alfabetos, estado inicial, estados finales y reglas. Cada transición usa el formato `estado,lee -> siguiente,escribe,mueve`; `L`, `R` y `S` indican izquierda, derecha y quieto. `□` representa una celda vacía del alfabeto de cinta y no puede ser un símbolo de entrada. La interfaz explica los campos antes de abrir el editor.
+
+La MT ejecuta transiciones de forma no determinista. Se exploran las configuraciones por anchura; una ruta que llega a un estado final acepta. Si las rutas se agotan sin aceptación y sin ciclos, se rechaza; si se repite una configuración o se alcanza el presupuesto (5.000 configuraciones o 1.000 transiciones por ruta), el resultado es inconcluso. Un límite de simulación no demuestra que la máquina real rechace ni que vaya a terminar. Las sugerencias con aceptación/rechazo fijo se ocultan al modificar las reglas, para no presentar como válidos resultados de una máquina distinta.
 
 ## Interfaz y flujo de uso
 
 1. `main.py` abre la pantalla principal.
 2. La persona selecciona uno de los cuatro niveles.
 3. El módulo explica qué significa una cadena y deja escribir una sin elegir un ejemplo.
-4. Una franja superior muestra un ejemplo rápido adaptado a los símbolos configurados.
+4. Una franja superior muestra un ejemplo rápido adaptado a los símbolos configurados; el Nivel 0 además explica la tarea en una guía de tres pasos.
 5. Elegir un ejemplo solo lo carga en la entrada al pulsar **Cargar ejemplo**.
 6. Al pulsar **Simular cadena**, el modelo produce la traza completa.
 7. La reproducción comienza automáticamente. **Detener**, la velocidad, **Anterior**, **Siguiente**, **Reproducir** o una fila actualizan la configuración visible.
