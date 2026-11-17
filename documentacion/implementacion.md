@@ -27,7 +27,7 @@ La portada organiza el contenido en una barra lateral fija y un área principal 
 
 ## Modelos computacionales
 
-### Nivel 3: AFN y construcción de subconjuntos
+### Nivel 3: AFN y AFD; construcción de subconjuntos
 
 El alfabeto se configura con símbolos de un carácter separados por comas. La primera plantilla elige un símbolo final `f` y reconoce:
 
@@ -118,4 +118,5 @@ Se usa Tkinter, incluido normalmente con Python, para mantener la instalación s
 - [MIT OpenCourseWare: autómatas de pila](https://ocw.mit.edu/courses/18-404j-theory-of-computation-fall-2020/a22fce6f6824c53dbb79a0da786966a6_MIT18_404f20_lec4.pdf): apilar al leer el primer bloque y desapilar al leer el segundo.
 - [MIT OpenCourseWare: autómatas linealmente acotados](https://ocw.mit.edu/courses/18-404j-theory-of-computation-fall-2020/a48f01c5374e72ee4f68a70bc0e38583_MIT18_404f20_lec10.pdf): el cabezal se mantiene en la porción de entrada.
 - [MIT OpenCourseWare: máquinas de Turing](https://ocw.mit.edu/courses/18-404j-theory-of-computation-fall-2020/12409362e93748137502be876e72f9b3_IycOPFmEQk8.pdf): lectura, escritura, movimiento bidireccional y detención.
+- [Máquina Oráculo: La jerarquía de Chomsky](https://maquinaoraculo.com/deep-learning/la-jerarquia-de-chomsky/): explicación de los cuatro niveles de la Jerarquía de Chomsky y la clasificación de los lenguajes formales.
 - [Cornell: indecidibilidad del problema de parada](https://www.cs.cornell.edu/courses/cs212/2000sp/notes/lectures/l28-computability.htm): no hay un algoritmo general que determine siempre si cualquier programa termina.
