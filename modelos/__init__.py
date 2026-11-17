@@ -1,1 +1,1 @@
-"""Modelos de cómputo de la jerarquía de Chomsky."""
+"""Modelos de cómputo de la Jerarquía de Chomsky."""

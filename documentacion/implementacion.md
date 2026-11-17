@@ -2,7 +2,7 @@
 
 ## Propósito
 
-La aplicación ilustra cómo aumenta la capacidad de cómputo al pasar por los cuatro niveles de la jerarquía de Chomsky. En todos los módulos se recibe una cadena y se produce una traza ordenada de configuraciones que la interfaz muestra y permite recorrer.
+La aplicación ilustra cómo aumenta la capacidad de cómputo al pasar por los **cuatro niveles** de la **Jerarquía de Chomsky**. En todos los módulos se recibe una cadena y se produce una traza ordenada de configuraciones que la interfaz muestra y permite recorrer.
 
 ## Organización del código
 
@@ -112,33 +112,7 @@ Se usa Tkinter, incluido normalmente con Python, para mantener la instalación s
 - El modo de suma opera con números positivos escritos en unario.
 - Los límites de entrada evitan trazas excesivamente grandes y mantienen la interfaz interactiva.
 
-## Verificación y criterio académico en Colombia
-
-Las reglas matemáticas de los autómatas no cambian según el país. Para la sustentación conviene declarar el alfabeto, los estados, la transición, el estado inicial, los finales y el criterio de aceptación; después mostrar una traza que corresponda a esas reglas. El material de [Lenguajes y Máquinas de la Universidad de los Andes](https://cursos.virtual.uniandes.edu.co/isis1106/wp-content/uploads/sites/81/2019/08/capitulo1.pdf) relaciona lenguajes regulares con autómatas finitos, libres de contexto con autómatas de pila, sensibles al contexto con máquinas linealmente restringidas e irrestrictos con máquinas de Turing. El [programa de Lenguajes Formales de la UPTC](https://www.uptc.edu.co/sitio/export/sites/default/portal/sitios/universidad/vic_aca/facultades/fac_sog/preg/ing_54673_s/.content/docs/plan_estud/Sem7-lengform.pdf) incluye precisamente alfabetos, cadenas, AFN/AFD, conversión, autómatas de pila y máquinas de Turing. Un [trabajo de la Universidad Tecnológica de Pereira](https://ojs2.utp.edu.co/index.php/revistaciencia/article/view/2573) describe un simulador como herramienta para visualizar el reconocimiento de palabras de un lenguaje.
-
-La aplicación distingue tres resultados: **aceptada** (alguna ejecución alcanza el criterio final), **rechazada** (la cadena no pertenece al alfabeto o se agotaron todas las rutas sin aceptación) y **no evaluada** (un presupuesto se agotó o una MT entró en ciclo). Las pruebas en `tests/test_modelos.py` comparan los resultados con definiciones independientes de los lenguajes sobre conjuntos exhaustivos de cadenas cortas; además inspeccionan invariantes de pila, cinta y configuración. Se ejecutan con `py -m unittest discover -s tests -v`, también en GitHub Actions con Python 3.9 y 3.12.
-
-## Guion breve para la sustentación
-
-**Presentación (30–45 segundos):**
-
-> Chomsky Lab es una aplicación de escritorio en Python que muestra la jerarquía de Chomsky mediante cuatro simuladores. En cada módulo se introduce una cadena y se puede avanzar paso a paso para observar el estado y la memoria disponible para la máquina. Se eligieron lenguajes concretos para que la diferencia entre memoria finita, pila, cinta acotada y cinta extendible sea visible.
-
-**Demostración recomendada:**
-
-1. Nivel 3: comparar `ba` (acepta) con `b` (rechaza) y cambiar el símbolo final a `b`.
-2. Nivel 2: simular `aabb` y observar cómo la pila vuelve a `⊥`; luego probar `aab`.
-3. Nivel 1: simular `aabbcc` y observar marcas `X`, `Y`, `Z` y movimientos de ida y regreso; luego probar `aabcc`.
-4. Nivel 0: mostrar `010` frente a `0101`, o ejecutar `111+11` y leer el resultado `11111`.
-
-**Preguntas que puede explicar el equipo:**
-
-- ¿Por qué el nivel 2 necesita pila? Porque debe recordar cuántas `a` aparecieron antes de consumir las `b`; una cantidad fija de estados no basta para cualquier `n`.
-- ¿Qué significa linealmente acotado? Que la máquina solo utiliza una cantidad de cinta proporcional a la longitud de la entrada; aquí los delimitadores fijan esa región.
-- ¿Qué representa una configuración? El estado de control, el contenido de la memoria (pila o cinta) y la posición del cabezal cuando aplica.
-- ¿Cómo se separan interfaz y lógica? Los módulos `modelos` devuelven pasos y resultado; `interfaz` los representa sin calcular las reglas del lenguaje.
-
-## Fuentes para las reglas
+## Fuentes de investigación
 
 - [Cornell: implementación de analizadores léxicos](https://courses.cs.cornell.edu/cs4120/2023sp/notes/leximpl/index.html): clausura ε y construcción de subconjuntos.
 - [MIT OpenCourseWare: autómatas de pila](https://ocw.mit.edu/courses/18-404j-theory-of-computation-fall-2020/a22fce6f6824c53dbb79a0da786966a6_MIT18_404f20_lec4.pdf): apilar al leer el primer bloque y desapilar al leer el segundo.

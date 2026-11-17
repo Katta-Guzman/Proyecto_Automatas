@@ -618,7 +618,7 @@ class Aplicacion:
              "Ejemplo: reconocer el palíndromo 0110 o calcular 111+11.", 0),
         ]
         self._mostrar_ventana_lectura(
-            "La jerarquía de Chomsky",
+            "La Jerarquía de Chomsky",
             "Cada nivel añade una forma de memoria y reconoce una clase más amplia de lenguajes.",
             elementos, texto_boton="Abrir simulador",
         )
@@ -666,7 +666,7 @@ class Aplicacion:
         elementos = [
             ("Chomsky Lab",
              "Laboratorio visual para estudiar autómatas y modelos de cómputo.",
-             "Proyecto académico en Python y Tkinter."),
+             "Proyecto académico en Python"),
             ("Aprende con una ejecución visible",
              "Prueba cadenas y mira cómo cambia el estado, la pila o la cinta.",
              "AFN y AFD · AP · LBA · Máquina de Turing"),
@@ -676,7 +676,7 @@ class Aplicacion:
         ]
         self._mostrar_ventana_lectura(
             "Acerca del laboratorio",
-            "Una herramienta de aprendizaje para visualizar la jerarquía de Chomsky.",
+            "Una herramienta de aprendizaje para visualizar la Jerarquía de Chomsky.",
             elementos, texto_boton=None,
         )
 
