@@ -1,6 +1,6 @@
-# Chomsky Lab — Simulador de la jerarquía de Chomsky
+# Simulador de la Jerarquía de Chomsky
 
-Aplicación educativa de escritorio para explorar los modelos computacionales de los cuatro niveles de la jerarquía de Chomsky. La interfaz permite ejecutar una entrada, recorrer cada paso y observar el estado, la pila o la cinta de la máquina.
+Esta aplicación permite explorar los modelos computacionales de los cuatro niveles de la **Jerarquía de Chomsky**. La interfaz permite ejecutar una entrada, recorrer cada paso y observar el estado, la pila o la cinta de la máquina.
 
 ## Requisitos
 
@@ -18,7 +18,7 @@ Clona o descarga el repositorio. Abre una terminal en la carpeta `Proyecto_Autom
 py main.py
 ```
 
-En macOS o Linux también puedes usar:
+En mac o Linux también puedes usar:
 
 ```bash
 python3 main.py
@@ -121,25 +121,14 @@ La pantalla guía el ejercicio en tres pasos: elegir una tarea, entender su form
 
 Al pulsar **Simular cadena**, la traza permite avanzar o reproducir cada regla. Una máquina personalizada acepta cuando alguna ruta llega a un estado final; si todas se detienen sin llegar a uno, rechaza. Una ruta cíclica o el límite de búsqueda produce **no evaluada**, porque una simulación finita no puede decidir si toda máquina arbitraria terminará. Después de editar reglas, la interfaz oculta las sugerencias con resultado fijo para no atribuirles una respuesta incorrecta.
 
-## Comprobación de los modelos
-
-Ejecuta las pruebas automáticas con:
-
-```powershell
-py -m unittest discover -s tests -v
-```
-
-Se comparan los cuatro reconocedores con definiciones independientes de sus lenguajes en conjuntos exhaustivos de cadenas cortas. También se comprueban la equivalencia AFN/AFD, la base de la pila, los límites de la cinta acotada, la suma unaria y la distinción entre rechazo y límite de visualización. GitHub Actions ejecuta estas pruebas en Python 3.9 y 3.12 tras cada envío o solicitud de integración.
-
 ## Alcance
 
-Los cuatro niveles admiten ahora máquinas definidas por transiciones, además de los recorridos guiados. Los intérpretes aceptan notación de un carácter para símbolos y hasta 8 estados; cada modo limita además el número de reglas. El AP busca rutas no deterministas con tope de 5.000 configuraciones y pila de 64 marcas; LBA y MT usan hasta 5.000 configuraciones y 1.000 pasos por ruta. Si el presupuesto no alcanza, el resultado es **no evaluada**. La MT reporta también inconcluso si detecta una configuración repetida. Una MT arbitraria puede no terminar y el problema de parada es indecidible, así que la app no promete decidir todos los programas o lenguajes.
+La aplicación contiene cuatro módulos acerca de los niveles de la Jerarquía de Chomsky. Los módulos ofrecen ejercicios guiados y permiten definir máquinas por transiciones; no convierten en autómatas cualquier enunciado libre. Las simulaciones tienen límites de entrada y ejecución. Si se alcanza uno o se detecta un ciclo en la MT, el resultado es **no evaluada**; por esta razón la aplicación no garantiza resolver cualquier lenguaje o programa.
 
-## Estructura del proyecto
+## Estructura del Proyecto
 
 ```text
 Proyecto_Automatas/
-├── .github/workflows/tests.yml
 ├── main.py
 ├── interfaz/
 │   ├── menu.py
@@ -157,15 +146,4 @@ Proyecto_Automatas/
 └── README.md
 ```
 
-La explicación de los conceptos, algoritmos, estructura y guía para la sustentación está en [`documentacion/implementacion.md`](documentacion/implementacion.md).
-
-## Repositorio público
-
-El checkout debe apuntar a un repositorio público de GitHub o GitLab. Crea el repositorio vacío (sin archivos iniciales), configura su URL y publica la rama `main`:
-
-```bash
-git remote set-url origin https://github.com/<usuario>/<repositorio>.git
-git push -u origin main
-```
-
-Después comparte el enlace del repositorio en la entrega académica. La aplicación funciona localmente sin configurar servicios externos.
+La explicación de los conceptos, algoritmos y estructura está en [`documentacion/implementacion.md`](documentacion/implementacion.md).
